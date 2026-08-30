@@ -190,3 +190,40 @@ func (s *Store) newestChild(sessionID, parentID string) (string, error) {
 	}
 	return id, err
 }
+
+// SetHeadDirect points head at an accepted message id (no leaf walk).
+func (s *Store) SetHeadDirect(sessionID, messageID string) error {
+	_, err := s.DB.Exec(`UPDATE session SET head_message_id = ?, updated_at = ? WHERE id = ?`,
+		messageID, nowMS(), sessionID)
+	return err
+}
+
+// HistoryUpTo walks parents from msgID upward and returns accepted rows
+// oldest→newest ending at msgID (inclusive). nil returns empty.
+func (s *Store) HistoryUpTo(sessionID string, msgID *string) ([]Message, error) {
+	if msgID == nil {
+		return []Message{}, nil
+	}
+	var out []Message
+	cur := *msgID
+	for range 100000 {
+		m, err := s.GetMessage(cur)
+		if err != nil {
+			return nil, err
+		}
+		if m.SessionID != sessionID {
+			return nil, ErrNotAccepted
+		}
+		if !m.Preview {
+			out = append(out, *m)
+		}
+		if m.ParentID == nil {
+			break
+		}
+		cur = *m.ParentID
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}

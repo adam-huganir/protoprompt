@@ -9,28 +9,35 @@ import (
 
 // Message is one node in the session's message tree.
 type Message struct {
-	ID             string  `json:"id"`
-	SessionID      string  `json:"-"`
-	ParentID       *string `json:"parentId"`
-	Role           string  `json:"role"`
-	Text           string  `json:"text"`
-	ReasoningText  string  `json:"reasoningText"`
-	Status         string  `json:"status"`
-	Preview        bool    `json:"preview"`
-	PromptRevID    *string `json:"promptRevId"`
-	Model          string  `json:"model"`
-	ReasoningEff   string  `json:"reasoningEffort"`
-	Temperature    float64 `json:"temperature"`
-	MaxTokens      *int    `json:"maxTokens"`
-	Error          string  `json:"error"`
-	PromptTokens   *int    `json:"promptTokens"`
-	OutputTokens   *int    `json:"outputTokens"`
-	LatencyMS      *int64  `json:"latencyMs"`
-	CreatedAt      int64   `json:"createdAt"`
-	FinishedAt     *int64  `json:"finishedAt"`
-	SiblingCount   int     `json:"siblingCount"`
-	SiblingIndex   int     `json:"siblingIndex"`
-	PreviewMessage *any    `json:"previewMessage"`
+	ID             string       `json:"id"`
+	SessionID      string       `json:"-"`
+	ParentID       *string      `json:"parentId"`
+	Role           string       `json:"role"`
+	Text           string       `json:"text"`
+	ReasoningText  string       `json:"reasoningText"`
+	Status         string       `json:"status"`
+	Preview        bool         `json:"preview"`
+	PromptRevID    *string      `json:"promptRevId"`
+	Model          string       `json:"model"`
+	ReasoningEff   string       `json:"reasoningEffort"`
+	Temperature    float64      `json:"temperature"`
+	MaxTokens      *int         `json:"maxTokens"`
+	Error          string       `json:"error"`
+	PromptTokens   *int         `json:"promptTokens"`
+	OutputTokens   *int         `json:"outputTokens"`
+	LatencyMS      *int64       `json:"latencyMs"`
+	CreatedAt      int64        `json:"createdAt"`
+	FinishedAt     *int64       `json:"finishedAt"`
+	SiblingCount   int          `json:"siblingCount"`
+	SiblingIndex   int          `json:"siblingIndex"`
+	PreviewMessage *Message     `json:"previewMessage"`
+	Siblings       []SiblingRef `json:"siblings,omitempty"`
+}
+
+// SiblingRef points at one accepted sibling in creation order.
+type SiblingRef struct {
+	ID    string `json:"id"`
+	Index int    `json:"siblingIndex"`
 }
 
 var ErrNotAccepted = errors.New("not an accepted message of this session")
@@ -194,6 +201,7 @@ func (s *Store) FillSiblings(msgs []Message) error {
 		}
 		count := 0
 		index := 0
+		var refs []SiblingRef
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
@@ -201,6 +209,7 @@ func (s *Store) FillSiblings(msgs []Message) error {
 				return err
 			}
 			count++
+			refs = append(refs, SiblingRef{ID: id, Index: count})
 			if id == m.ID && index == 0 {
 				index = count
 			}
@@ -208,6 +217,9 @@ func (s *Store) FillSiblings(msgs []Message) error {
 		rows.Close()
 		if err := rows.Err(); err != nil {
 			return err
+		}
+		if len(refs) > 1 {
+			m.Siblings = refs
 		}
 		m.SiblingCount = count
 		if index == 0 {
@@ -332,4 +344,18 @@ func (s *Store) HasAcceptedMessages(sessionID string) (bool, error) {
 	var n int
 	err := s.DB.QueryRow(`SELECT COUNT(*) FROM message WHERE session_id = ? AND preview = 0`, sessionID).Scan(&n)
 	return n > 0, err
+}
+
+// CopyMessageToParent inserts an accepted duplicate of src under parentID.
+func (s *Store) CopyMessageToParent(src *Message, parentID *string) (*Message, error) {
+	m := &Message{
+		ID: NewID(), SessionID: src.SessionID, ParentID: parentID, Role: src.Role,
+		Text: src.Text, Status: "done", ReasoningText: src.ReasoningText,
+		CreatedAt: nowMS(),
+	}
+	if err := s.execInsertMessage(m, false); err != nil {
+		return nil, err
+	}
+	m.Preview = false
+	return m, nil
 }

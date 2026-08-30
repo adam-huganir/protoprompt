@@ -7,8 +7,10 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"chatvolution/internal/config"
+	"chatvolution/internal/llm"
 	"chatvolution/internal/store"
 )
 
@@ -17,10 +19,21 @@ type Server struct {
 	db    *sql.DB
 	store *store.Store
 	web   fs.FS
+	llm   *llm.Client
 }
 
 func New(cfg config.Config, db *sql.DB, st *store.Store, web fs.FS) *Server {
-	return &Server{cfg: cfg, db: db, store: st, web: web}
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 300 * time.Second
+	}
+	return &Server{
+		cfg:   cfg,
+		db:    db,
+		store: st,
+		web:   web,
+		llm:   llm.New(cfg.BaseURL, cfg.APIKey, timeout),
+	}
 }
 
 func (s *Server) Handler() http.Handler {

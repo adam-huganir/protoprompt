@@ -10,17 +10,16 @@ import (
 )
 
 type Config struct {
-	BaseURL        string         `json:"baseUrl"`
-	APIKey         string         `json:"apiKey"`
-	Models         []string       `json:"models"`
-	DefaultModel   string         `json:"defaultModel"`
-	ReasoningEff   string         `json:"reasoningEffort"`
-	ExtraBody      map[string]any `json:"extraBody"`
-	Timeout        time.Duration  `json:"-"`
-	Port           int            `json:"port"`
-	Host           string         `json:"host"`
-	Dir            string         `json:"-"` // prompt workspace dir (from --dir)
-	timeoutSeconds int            `json:"requestTimeoutSeconds"`
+	BaseURL      string         `json:"baseUrl"`
+	APIKey       string         `json:"apiKey"`
+	Models       []string       `json:"models"`
+	DefaultModel string         `json:"defaultModel"`
+	ReasoningEff string         `json:"reasoningEffort"`
+	ExtraBody    map[string]any `json:"extraBody"`
+	Timeout      time.Duration  `json:"-"`
+	Port         int            `json:"port"`
+	Host         string         `json:"host"`
+	Dir          string         `json:"-"` // prompt workspace dir (from --dir)
 }
 
 type fileConfig struct {
@@ -72,7 +71,6 @@ func Load(path string) (*Config, error) {
 		}
 		if fc.RequestTimeoutSeconds != nil && *fc.RequestTimeoutSeconds > 0 {
 			cfg.Timeout = time.Duration(*fc.RequestTimeoutSeconds) * time.Second
-			cfg.timeoutSeconds = *fc.RequestTimeoutSeconds
 		}
 		if fc.Port != nil && *fc.Port > 0 {
 			cfg.Port = *fc.Port
