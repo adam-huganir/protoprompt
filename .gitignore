@@ -1,0 +1,6 @@
+chatvolution.db*
+chatvolution.json
+prompts/
+/chatvolution.exe
+web-spec.md
+.env
