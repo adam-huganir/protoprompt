@@ -4,3 +4,4 @@ prompts/
 /chatvolution.exe
 web-spec.md
 .env
+*.log
