@@ -9,7 +9,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // Rev is one saved revision of a prompt file.
@@ -287,5 +286,5 @@ func (s *Store) DiskChanged(file string) (bool, error) {
 }
 
 func nowMS() int64 {
-	return time.Now().UnixMilli()
+	return nextTS()
 }

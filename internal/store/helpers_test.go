@@ -24,3 +24,30 @@ func writeFileAbs(full, content string) error {
 	}
 	return os.WriteFile(full, []byte(content), 0o644)
 }
+
+func newTestRev(t *testing.T, s *Store) string {
+	t.Helper()
+	n++
+	revID, err := s.SaveFile("p.md", "rev content "+itoaTest(n))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revID == nil {
+		t.Fatal("expected new revision")
+	}
+	return *revID
+}
+
+var n int
+
+func itoaTest(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var b []byte
+	for i > 0 {
+		b = append([]byte{byte('0' + i%10)}, b...)
+		i /= 10
+	}
+	return string(b)
+}

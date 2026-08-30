@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chatvolution</title>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <header id="hdr">
+    <span class="brand" title="prompt-iteration chat workbench">chatvolution</span>
+    <span id="hdr-file-slot"></span>
+    <span class="spacer"></span>
+    <div class="seg" id="mode-seg" role="tablist" aria-label="Layout mode">
+      <button type="button" data-mode="split">Split</button>
+      <button type="button" data-mode="editor">Editor</button>
+      <button type="button" data-mode="chat">Chat</button>
+    </div>
+    <span id="hdr-chat-slot"></span>
+  </header>
+
+  <main id="main">
+    <section id="editor-pane" class="pane" aria-label="Prompt editor">
+      <div class="ed-top">
+        <div class="ed-file-row">
+          <select id="file-select" aria-label="Prompt file"></select>
+          <button type="button" id="btn-new-file" class="btn btn-quiet" title="Create a new prompt file">New file…</button>
+        </div>
+        <div class="ed-rev-row">
+          <select id="rev-select" aria-label="Revision">
+            <option value="">current</option>
+          </select>
+          <button type="button" id="btn-diff-toggle" class="btn btn-quiet" disabled>Diff vs current</button>
+        </div>
+      </div>
+
+      <div id="editor-wrap">
+        <textarea id="editor" class="mono" spellcheck="false"
+          placeholder="# system prompt&#10;&#10;Type markdown here. Autosaves. Ctrl+S forces a save."></textarea>
+        <pre id="rev-view" class="mono" hidden></pre>
+        <div id="diff-view" hidden></div>
+      </div>
+
+      <div class="ed-foot">
+        <span id="ed-meta">0 chars · ≈0 tokens</span>
+        <span id="save-ind"></span>
+        <button type="button" id="btn-reload" class="btn btn-warn" hidden>file changed on disk — Reload</button>
+      </div>
+
+      <div id="editor-empty" class="empty" hidden>
+        <div class="empty-title">No prompt files yet</div>
+        <p class="empty-sub">Prompt files are plain markdown in your prompts folder. The active file becomes the system prompt for new replies.</p>
+        <div class="row">
+          <input id="new-file-input" type="text" placeholder="notes.md" spellcheck="false">
+          <button type="button" id="btn-new-file-2" class="btn btn-accent">Create prompt file</button>
+        </div>
+      </div>
+
+      <div id="editor-diff-overlay" hidden>
+        <div class="diff-bar">
+          <button type="button" id="diff-close" class="btn btn-quiet">✕ Close</button>
+        </div>
+        <div id="editor-diff"></div>
+      </div>
+    </section>
+
+    <div id="divider" title="Drag to resize · double-click to reset"></div>
+
+    <section id="chat-pane" class="pane" aria-label="Conversation">
+      <div id="chat-banners"></div>
+      <div id="msg-list"></div>
+      <div id="chat-empty" class="empty"></div>
+      <div id="input-row">
+        <textarea id="input" rows="1" placeholder="Message the model…"></textarea>
+        <button type="button" id="btn-send" class="btn btn-accent">Send</button>
+      </div>
+      <div id="input-err"></div>
+    </section>
+  </main>
+
+  <footer id="app-footer">chatvolution · plain text — no markdown rendering</footer>
+
+  <div id="toasts"></div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
