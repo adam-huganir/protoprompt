@@ -25,17 +25,33 @@ func New(cfg config.Config, db *sql.DB, st *store.Store, web fs.FS) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/config", s.handleConfig)
-
+	mux.HandleFunc("/api/", s.dispatchAPI)
 	if s.web != nil {
 		mux.Handle("/", http.FileServerFS(s.web))
 	}
 	return mux
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+// dispatchAPI routes the whole /api tree in code: prompt-file paths embed
+// slashes, which ServeMux patterns cannot express alongside suffixes like
+// /save.
+func (s *Server) dispatchAPI(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	switch {
+	case p == "/api/health" && r.Method == http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	case p == "/api/config" && r.Method == http.MethodGet:
+		s.handleConfig(w, r)
+	case p == "/api/files" || strings.HasPrefix(p, "/api/files/") ||
+		strings.HasPrefix(p, "/api/revs/"):
+		s.fileRoutes(w, r)
+	case p == "/api/sessions" || strings.HasPrefix(p, "/api/sessions/"):
+		s.sessionRoutes(w, r)
+	case strings.HasPrefix(p, "/api/messages/"):
+		s.messageRoutes(w, r)
+	default:
+		writeErr(w, http.StatusNotFound, "not found")
+	}
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +75,4 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
-}
-
-// pathParam extracts the {name...} segment(s) from a matched request.
-func pathParam(r *http.Request, name string) string {
-	return strings.TrimPrefix(r.PathValue(name), "/")
 }

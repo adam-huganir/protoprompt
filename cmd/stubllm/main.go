@@ -64,9 +64,9 @@ type usageDelta struct {
 }
 
 type usageChoice struct {
-	Index        int         `json:"index"`
-	Delta        usageDelta  `json:"delta"`
-	FinishReason *string     `json:"finish_reason"`
+	Index        int        `json:"index"`
+	Delta        usageDelta `json:"delta"`
+	FinishReason *string    `json:"finish_reason"`
 }
 
 type usageChunk struct {

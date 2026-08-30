@@ -24,7 +24,7 @@ func Open(path string) (*sql.DB, error) {
 		db.Close()
 	}
 	// Fallback: plain path + per-connection pragmas, one pooled connection.
-	db, err = sql.Open("sqlite", "file:" + path)
+	db, err = sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		return nil, err
 	}
