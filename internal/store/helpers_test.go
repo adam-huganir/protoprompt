@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"chatvolution/internal/db"
+	"protoprompt/internal/db"
 )
 
 func openTestDB(t *testing.T) (*sql.DB, error) {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"chatvolution/internal/config"
-	"chatvolution/internal/llm"
-	"chatvolution/internal/store"
+	"protoprompt/internal/config"
+	"protoprompt/internal/llm"
+	"protoprompt/internal/store"
 )
 
 type Server struct {

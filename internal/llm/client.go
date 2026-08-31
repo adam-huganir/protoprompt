@@ -85,7 +85,7 @@ func (c *Client) Models(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "chatvolution")
+	req.Header.Set("User-Agent", "protoprompt")
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
@@ -191,7 +191,7 @@ func (c *Client) Stream(ctx context.Context, p Params, onDelta func(kind, text s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("User-Agent", "chatvolution")
+	req.Header.Set("User-Agent", "protoprompt")
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}

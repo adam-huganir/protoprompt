@@ -1,4 +1,4 @@
-# Chatvolution backend API (authoritative contract)
+# Protoprompt backend API (authoritative contract)
 
 All JSON. Errors: `{"error": "message"}` with appropriate status.
 Message rows are the full object:

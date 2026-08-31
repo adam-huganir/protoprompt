@@ -1,4 +1,4 @@
-/* chatvolution — markdown source highlighting: token colors + textarea overlay.
+/* protoprompt — markdown source highlighting: token colors + textarea overlay.
    Token classes may only use color / font-weight / font-style / text-decoration-line:
    the editor overlays this exact markup under a transparent monospace textarea, so
    any metric change (font-size, family, letter/word-spacing, indent, stretch) or

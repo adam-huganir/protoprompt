@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-chatvolution is a local, single-user **prompt-iteration chat workbench**: a chat UI where every assistant reply is reproducible against the exact prompt revision that produced it. Prompt files are markdown on disk with saved revisions and diffs; conversations are SQLite-persisted trees supporting branching, regenerate, preview/accept, resend, and head moving. Backend is Go; the front end is vanilla ES modules embedded into the same binary. No frameworks, no Node build step, no external runtime beyond Go (and Node only for optional scripts).
+protoprompt is a local, single-user **prompt-iteration chat workbench**: a chat UI where every assistant reply is reproducible against the exact prompt revision that produced it. Prompt files are markdown on disk with saved revisions and diffs; conversations are SQLite-persisted trees supporting branching, regenerate, preview/accept, resend, and head moving. Backend is Go; the front end is vanilla ES modules embedded into the same binary. No frameworks, no Node build step, no external runtime beyond Go (and Node only for optional scripts).
 
 ## Architecture & Data Flow
 
@@ -40,10 +40,10 @@ web/js (chat.js, editor.js) --fetchJSON / streamSSE--> internal/api --> internal
 
 ```bash
 go build ./...                     # compile everything
-go build -o chatvolution.exe .     # the single shippable binary
+go build -o protoprompt.exe .     # the single shippable binary
 go test ./...                      # full test suite
 go test ./internal/api -run TestPreviewAcceptFlow   # one test
-go run . -config chatvolution.json # run the app (flags: -config -dir -db -port -host)
+go run . -config protoprompt.json # run the app (flags: -config -dir -db -port -host)
 
 go run ./cmd/stubllm               # echo upstream on 127.0.0.1:9876 (model "stub")
 node smoke/mdhl.test.mjs           # front-end highlighter smoke test (prints PASS mdhl)
@@ -69,7 +69,7 @@ node smoke/mdhl.test.mjs           # front-end highlighter smoke test (prints PA
 - Streaming UI accumulates raw text in a local variable and re-renders from the accumulated string rather than appending text nodes, so a truncated markdown marker never renders as markup.
 - Styling: single `app.css` with CSS custom properties for the theme (`--bg`, `--fg`, `--accent`, `--mono`, …); BEM-ish prefixes per component (`msg-*`, `btn-*`, `ed-*`) and per-token classes for syntax highlighting (`md-*`).
 
-**Config precedence** (`internal/config/config.go`): defaults < `chatvolution.json` < env < CLI flags. Env: `CHATVOLUTION_BASE_URL` / `CHATVOLUTION_API_KEY` / `CHATVOLUTION_MODEL`, with `OPENAI_BASE_URL` / `OPENAI_API_KEY` as fallbacks. **Trap:** an inherited `OPENAI_*` env var silently overrides the config file — confirm with `GET /api/config` (reports `baseUrl`, `hasKey`, `dir`) before assuming an upstream problem.
+**Config precedence** (`internal/config/config.go`): defaults < `protoprompt.json` < env < CLI flags. Env: `PROTOPROMPT_BASE_URL` / `PROTOPROMPT_API_KEY` / `PROTOPROMPT_MODEL`, with `OPENAI_BASE_URL` / `OPENAI_API_KEY` as fallbacks. **Trap:** an inherited `OPENAI_*` env var silently overrides the config file — confirm with `GET /api/config` (reports `baseUrl`, `hasKey`, `dir`) before assuming an upstream problem.
 
 ## Important Files
 
@@ -78,15 +78,15 @@ node smoke/mdhl.test.mjs           # front-end highlighter smoke test (prints PA
 - `internal/db/migrations.go` — full schema (`session`, `message`, `prompt_rev`) and indexes; schema changes belong here, statements run verbatim with `IF NOT EXISTS`.
 - `internal/api/generate.go` — SSE framing (`sseStream.event`) reused by `resend.go`.
 - `internal/store/message.go` / `prompt.go` — tree walk, sibling computation, atomic save-with-revision semantics (`SaveFile` returns `nil` revID when text is unchanged).
-- `chatvolution.json`, `.env` — local, gitignored config; `prompts/*.md` are user data, each file's text being the system prompt.
+- `protoprompt.json`, `.env` — local, gitignored config; `prompts/*.md` are user data, each file's text being the system prompt.
 - `web/index.html`, `web/js/chat.js`, `web/js/editor.js` — the two panes; `web/js/state.js` for shared state shape.
 
 ## Runtime/Tooling Preferences
 
-- **Go 1.25**, module `chatvolution` (`go 1.25.0`). Pure-Go SQLite driver `modernc.org/sqlite` — **no cgo**, so no compiler toolchain is needed.
+- **Go 1.25**, module `protoprompt` (`go 1.25.0`). Pure-Go SQLite driver `modernc.org/sqlite` — **no cgo**, so no compiler toolchain is needed.
 - **Node 22 / bun are optional**; `package.json` is literally `{}` and there are no dependencies to install. Do not introduce an npm build step.
 - SQLite settings from `db.Open`: WAL journal, `busy_timeout=5000`, `foreign_keys=1`, with a single-pooled-connection fallback when DSN pragmas fail.
-- Default ports: app `8420` (per `chatvolution.json`), stub upstream `9876`. The app binds `127.0.0.1`; generation calls respect `HTTP_PROXY`/`NO_PROXY` from the environment, so point local stubs in `NO_PROXY`.
+- Default ports: app `8420` (per `protoprompt.json`), stub upstream `9876`. The app binds `127.0.0.1`; generation calls respect `HTTP_PROXY`/`NO_PROXY` from the environment, so point local stubs in `NO_PROXY`.
 
 ## Testing & QA
 

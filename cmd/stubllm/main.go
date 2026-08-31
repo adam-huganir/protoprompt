@@ -1,5 +1,5 @@
 // Command stubllm is a dev-only OpenAI-compatible streaming chat-completions
-// stub for chatvolution. It echoes the last user message with a fake
+// stub for protoprompt. It echoes the last user message with a fake
 // reasoning preamble so the whole UI can be exercised without a paid endpoint.
 package main
 

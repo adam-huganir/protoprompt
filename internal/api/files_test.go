@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"chatvolution/internal/config"
-	"chatvolution/internal/db"
-	"chatvolution/internal/store"
+	"protoprompt/internal/config"
+	"protoprompt/internal/db"
+	"protoprompt/internal/store"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {

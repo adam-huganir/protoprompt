@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"chatvolution/internal/llm"
-	"chatvolution/internal/store"
+	"protoprompt/internal/llm"
+	"protoprompt/internal/store"
 )
 
 // sessionRoutes handles /api/sessions and /api/sessions/{id}/....

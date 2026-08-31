@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"chatvolution/internal/llm"
-	"chatvolution/internal/store"
+	"protoprompt/internal/llm"
+	"protoprompt/internal/store"
 )
 
 // sseStream wraps the response writer for server-sent events.

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"chatvolution/internal/diffx"
-	"chatvolution/internal/store"
+	"protoprompt/internal/diffx"
+	"protoprompt/internal/store"
 )
 
 type revBrief struct {

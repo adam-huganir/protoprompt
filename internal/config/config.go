@@ -1,4 +1,4 @@
-// Package config loads chatvolution settings: defaults < chatvolution.json < env < CLI.
+// Package config loads protoprompt settings: defaults < protoprompt.json < env < CLI.
 package config
 
 import (
@@ -34,7 +34,7 @@ type fileConfig struct {
 	Host                  *string        `json:"host"`
 }
 
-// Load reads config from path (default "chatvolution.json" when empty). A
+// Load reads config from path (default "protoprompt.json" when empty). A
 // missing file is not an error. Env overrides file; caller applies CLI flags.
 func Load(path string) (*Config, error) {
 	cfg := &Config{
@@ -44,7 +44,7 @@ func Load(path string) (*Config, error) {
 		Host:      "127.0.0.1",
 	}
 	if path == "" {
-		path = "chatvolution.json"
+		path = "protoprompt.json"
 	}
 	if data, err := os.ReadFile(path); err == nil {
 		var fc fileConfig
@@ -82,14 +82,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	// Env: CHATVOLUTION_* preferred, OPENAI_* fallback.
-	if v := envFallback("CHATVOLUTION_BASE_URL", "OPENAI_BASE_URL"); v != "" {
+	// Env: PROTOPROMPT_* preferred, OPENAI_* fallback.
+	if v := envFallback("PROTOPROMPT_BASE_URL", "OPENAI_BASE_URL"); v != "" {
 		cfg.BaseURL = v
 	}
-	if v := envFallback("CHATVOLUTION_API_KEY", "OPENAI_API_KEY"); v != "" {
+	if v := envFallback("PROTOPROMPT_API_KEY", "OPENAI_API_KEY"); v != "" {
 		cfg.APIKey = v
 	}
-	if v := os.Getenv("CHATVOLUTION_MODEL"); v != "" {
+	if v := os.Getenv("PROTOPROMPT_MODEL"); v != "" {
 		cfg.DefaultModel = v
 	}
 	if len(cfg.Models) == 0 && cfg.DefaultModel != "" {

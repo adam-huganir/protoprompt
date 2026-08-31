@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"chatvolution/internal/config"
-	"chatvolution/internal/db"
-	"chatvolution/internal/store"
+	"protoprompt/internal/config"
+	"protoprompt/internal/db"
+	"protoprompt/internal/store"
 )
 
 // echoUpstream streams "Echo: <last user message>" with reasoning, then a

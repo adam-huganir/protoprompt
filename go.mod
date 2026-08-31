@@ -1,4 +1,4 @@
-module chatvolution
+module protoprompt
 
 go 1.25.0
 

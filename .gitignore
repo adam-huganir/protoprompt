@@ -1,7 +1,7 @@
-chatvolution.db*
-chatvolution.json
+protoprompt.db*
+protoprompt.json
 prompts/
-/chatvolution.exe
+/protoprompt.exe
 stubllm.exe
 smoke/
 .env

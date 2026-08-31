@@ -34,8 +34,8 @@ func TestMissingFileDefaults(t *testing.T) {
 
 func TestEnvBeatsFile(t *testing.T) {
 	path := writeFile(t, "c.json", `{"baseUrl":"https://file.example/v1","apiKey":"filekey"}`)
-	t.Setenv("CHATVOLUTION_BASE_URL", "https://env.example/v1")
-	t.Setenv("CHATVOLUTION_API_KEY", "envkey")
+	t.Setenv("PROTOPROMPT_BASE_URL", "https://env.example/v1")
+	t.Setenv("PROTOPROMPT_API_KEY", "envkey")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -48,10 +48,10 @@ func TestEnvBeatsFile(t *testing.T) {
 	}
 }
 
-func TestChatvolutionBeatsOpenAI(t *testing.T) {
+func TestProtopromptBeatsOpenAI(t *testing.T) {
 	t.Setenv("OPENAI_BASE_URL", "https://openai.example/v1")
 	t.Setenv("OPENAI_API_KEY", "openaikey")
-	t.Setenv("CHATVOLUTION_API_KEY", "cvkey")
+	t.Setenv("PROTOPROMPT_API_KEY", "cvkey")
 	cfg, err := Load(filepath.Join(t.TempDir(), "none.json"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -60,12 +60,12 @@ func TestChatvolutionBeatsOpenAI(t *testing.T) {
 		t.Errorf("BaseURL fallback to OPENAI_* = %q", cfg.BaseURL)
 	}
 	if cfg.APIKey != "cvkey" {
-		t.Errorf("CHATVOLUTION_API_KEY should beat OPENAI_API_KEY, got %q", cfg.APIKey)
+		t.Errorf("PROTOPROMPT_API_KEY should beat OPENAI_API_KEY, got %q", cfg.APIKey)
 	}
 }
 
 func TestModelEnvPopulatesModels(t *testing.T) {
-	t.Setenv("CHATVOLUTION_MODEL", "qwen3vl-2b")
+	t.Setenv("PROTOPROMPT_MODEL", "qwen3vl-2b")
 	cfg, err := Load(filepath.Join(t.TempDir(), "none.json"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
