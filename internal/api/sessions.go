@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,10 +11,64 @@ import (
 )
 
 // helperPreamble is the fixed instruction prefix for the prompt-helper model.
-const helperPreamble = "You are an editor of the prompt file shown below. When the user asks you to change the prompt, reply with the COMPLETE new file text inside ONE fenced code block (```markdown ... ```), and nothing else that would prevent parsing. If no change is requested, answer plainly."
+const helperPreamble = "You are an editor of the prompt file shown below. When the user asks you to change the prompt and the request is unambiguous, reply with the COMPLETE new file text inside ONE fenced code block (```markdown ... ```), and nothing else that would prevent parsing. If the request is ambiguous, or references a previous response or other context you cannot see, do NOT guess or fabricate a change: ask a single clarifying question in plain text and wait for the answer before proposing anything. If no change is requested, answer plainly."
 
-func (s *Server) helperSystem(revText string) string {
-	return helperPreamble + "\n\nCURRENT PROMPT FILE:\n" + revText
+// chatContextMaxChars / chatContextMaxMsgs bound the main-chat context block
+// injected into the helper system prompt.
+const (
+	chatContextMaxChars = 8192
+	chatContextMaxMsgs  = 40
+)
+
+// helperSystem builds the helper model's system prompt: fixed preamble, the
+// current file text, and — when a chat session with messages exists for the
+// file — a bounded newest-first transcript of the most recently active one.
+func (s *Server) helperSystem(file, revText string) string {
+	sys := helperPreamble + "\n\nCURRENT PROMPT FILE:\n" + revText
+	if ctx := s.chatContext(file); ctx != "" {
+		sys += "\n\n" + ctx
+	}
+	return sys
+}
+
+// chatContext returns a bounded newest-first transcript of the most recently
+// active chat session on file ("" when none has messages). ListSessions
+// orders by updated_at DESC, so the first session with a non-empty transcript
+// is the most recently active one.
+func (s *Server) chatContext(file string) string {
+	sessions, err := s.store.ListSessions(file, "chat", 20)
+	if err != nil || len(sessions) == 0 {
+		return ""
+	}
+	for i := range sessions {
+		cs := &sessions[i]
+		msgs, err := s.store.Transcript(cs.ID, cs.HeadMessage)
+		if err != nil || len(msgs) == 0 {
+			continue
+		}
+		var b strings.Builder
+		b.WriteString("RECENT MAIN-CHAT CONTEXT (from the most recent chat session on this file; newest first):\n")
+		added := 0
+		for i := len(msgs) - 1; i >= 0 && added < chatContextMaxMsgs; i-- {
+			m := msgs[i]
+			var entry strings.Builder
+			if m.Role == "user" {
+				fmt.Fprintf(&entry, "user: %s\n", m.Text)
+			} else {
+				fmt.Fprintf(&entry, "assistant: %s\n", m.Text)
+				if m.ReasoningText != "" {
+					fmt.Fprintf(&entry, "  reasoning: %s\n", m.ReasoningText)
+				}
+			}
+			if added > 0 && b.Len()+entry.Len() > chatContextMaxChars {
+				break
+			}
+			b.WriteString(entry.String())
+			added++
+		}
+		return b.String()
+	}
+	return ""
 }
 
 // sessionRoutes handles /api/sessions and /api/sessions/{id}/....
@@ -178,6 +233,7 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request, id string) {
 				return
 			}
 			if pv != nil && pv.ID != msgs[i].ID {
+				renderHTML(pv)
 				msgs[i].PreviewMessage = pv
 			}
 			pe, err := s.store.GetProposedEdit(msgs[i].ID)
@@ -190,6 +246,7 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request, id string) {
 			}
 		}
 	}
+	renderHTMLAll(msgs)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session":  sess,
 		"messages": msgs,
@@ -320,6 +377,7 @@ func (s *Server) addMessage(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	msg.Preview = false
+	renderHTML(msg)
 	writeJSON(w, http.StatusCreated, msg)
 }
 
@@ -385,7 +443,8 @@ func (s *Server) sessionModel(sess *store.Session) (model, effort string) {
 	return
 }
 
-// acceptProposed saves the proposed text as a new revision of the prompt file.
+// acceptProposed saves the proposed text as a new revision of the prompt file
+// and removes the proposal, so it is gone on the next fetch.
 func (s *Server) acceptProposed(w http.ResponseWriter, r *http.Request, id string) {
 	pe, err := s.store.GetProposedEdit(id)
 	if err != nil {
@@ -398,6 +457,10 @@ func (s *Server) acceptProposed(w http.ResponseWriter, r *http.Request, id strin
 	}
 	revID, err := s.store.SaveFile(pe.File, pe.Text)
 	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if err := s.store.DeleteProposedEdit(id); err != nil {
 		writeStoreErr(w, err)
 		return
 	}

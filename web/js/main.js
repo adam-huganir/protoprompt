@@ -153,6 +153,9 @@ async function onFileChanged(path) {
 function setupChatTabs() {
   const saved = localStorage.getItem('cv.chatTab');
   if (saved === 'chat' || saved === 'helper') state.activeKind = saved;
+  const pane = $('#chat-pane');
+  const syncPane = () => { pane.dataset.kind = state.activeKind; };
+  syncPane();
   const tabs = document.querySelectorAll('#chat-tabs button');
   for (const b of tabs) {
     if (b.dataset.kind === state.activeKind) b.classList.add('active'); else b.classList.remove('active');
@@ -160,6 +163,7 @@ function setupChatTabs() {
       state.activeKind = b.dataset.kind;
       localStorage.setItem('cv.chatTab', state.activeKind);
       for (const x of tabs) x.classList.toggle('active', x === b);
+      syncPane();
       refreshSessions();
     });
   }

@@ -321,6 +321,21 @@ function showEmpty(title, sub) {
   ui.empty.appendChild(row);
 }
 
+// Message body node: server-rendered markdown when `html` is present, else the
+// source-highlight fallback for in-flight streams that have no html yet.
+function msgBody(html, text) {
+  if (html) {
+    const d = document.createElement('div');
+    d.className = 'msg-rendered';
+    d.innerHTML = html;
+    return d;
+  }
+  const pre = document.createElement('pre');
+  pre.className = 'msg-text';
+  applyHighlight(pre, text);
+  return pre;
+}
+
 function renderMsg(m) {
   const el = document.createElement('div');
   el.className = 'msg msg-' + m.role + (m.id === headId() ? ' msg-head' : '');
@@ -359,10 +374,7 @@ function renderMsg(m) {
     el.appendChild(det);
   }
 
-  const body = document.createElement('pre');
-  body.className = 'msg-text';
-  applyHighlight(body, m.text);
-  el.appendChild(body);
+  el.appendChild(msgBody(m.html, m.text));
 
   if (m.error) {
     const e = document.createElement('div');
@@ -409,7 +421,8 @@ function renderActions(m) {
   const row = document.createElement('div');
   row.className = 'msg-actions';
   if (busy) return row;
-  if (m.role === 'user') {
+  // Helper sessions have no prompt-file context: no edit-&-resend branching.
+  if (m.role === 'user' && state.activeKind !== 'helper') {
     const b = action('edit & resend', 'Edit this message, branch a new reply chain');
     b.addEventListener('click', () => startEdit(row, m));
     row.appendChild(b);
@@ -474,6 +487,7 @@ function renderProposal(m) {
 }
 
 function renderSiblingNav(m) {
+  if (state.activeKind === 'helper') return null; // no rewind/replay in helper sessions
   const n = m.siblingCount || 0;
   if (n < 2 || !m.siblings || m.siblings.length < 2) return null;
   const nav = document.createElement('div');
@@ -545,10 +559,7 @@ function renderPreview(pv) {
     det.appendChild(pre);
     el.appendChild(det);
   }
-  const body = document.createElement('pre');
-  body.className = 'msg-text';
-  applyHighlight(body, pv.text);
-  el.appendChild(body);
+  el.appendChild(msgBody(pv.html, pv.text));
   if (pv.error) {
     const e = document.createElement('div');
     e.className = 'msg-error';
@@ -631,6 +642,7 @@ async function startGenerate(body) {
     signal: controller.signal,
     onMeta: (d) => stream.init(d.message),
     onDelta: (d) => stream.append(d),
+    onDone: (d) => stream.done(d && d.html),
     onError: (d) => { failed = d && d.message; stream.fail(failed); },
   });
   controller = null;
@@ -676,6 +688,13 @@ function startLiveBubble() {
         applyHighlight(body, bodyText);
       }
       scrollToEnd();
+    },
+    done(html) {
+      if (!html) return;
+      const d = document.createElement('div');
+      d.className = 'msg-rendered';
+      d.innerHTML = html;
+      el.replaceChild(d, body);
     },
     fail(msg) {
       const e = document.createElement('div');

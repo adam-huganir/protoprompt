@@ -1,6 +1,8 @@
-// Markdown SOURCE highlighting for the chat transcript, prompt editor and chat
-// input. Tokenizes raw markdown into <span class="md-*"> wrappers: markers stay
-// visible, whitespace is preserved (source view, not rendered view). The
+// Markdown SOURCE highlighting for the prompt editor, chat input, edit box and
+// revision view, plus the streaming-bubble fallback before server html lands.
+// Chat bubbles themselves render server-provided `html` (.msg-rendered), not this
+// source view. Tokenizes raw markdown into <span class="md-*"> wrappers: markers
+// stay visible, whitespace is preserved (source view, not rendered view). The
 // tokenizer is DOM-free so it runs under node smoke tests; only attachOverlay
 // touches the browser. No nested-quantifier regexes anywhere — line and inline
 // passes are linear scans, so unterminated constructs terminate safely.

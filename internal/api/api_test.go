@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"protoprompt/internal/config"
 	"protoprompt/internal/db"
@@ -197,6 +199,18 @@ func TestHelperGenerateProposesEdit(t *testing.T) {
 		t.Fatalf("unexpected file text %q", f["text"])
 	}
 
+	// Accept removes the proposal: a reload shows none on the assistant row.
+	code, body = ls.req("GET", "/api/sessions/"+sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("reload after accept: %d %s", code, body)
+	}
+	payload = mustJSON[map[string]any](t, body)
+	msgs = payload["messages"].([]any)
+	asstMsg = msgs[1].(map[string]any)
+	if _, ok := asstMsg["proposedEdit"]; ok {
+		t.Fatal("proposedEdit should be gone after accept")
+	}
+
 	// Discard → ok, and proposal absent on reload.
 	code, body = ls.req("DELETE", "/api/messages/"+assistantID+"/proposed", nil)
 	if code != http.StatusOK {
@@ -218,6 +232,215 @@ func TestHelperGenerateProposesEdit(t *testing.T) {
 	code, body = ls.req("POST", "/api/messages/"+userID+"/proposed/accept", nil)
 	if code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d %s", code, body)
+	}
+}
+
+// captureProposalUpstream behaves like proposalUpstream (fenced reply when the
+// last user message contains "propose") but also records every system prompt
+// it receives, so tests can assert what generation sends upstream.
+func captureProposalUpstream(t *testing.T) (*httptest.Server, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var systems []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"object":"list","data":[{"id":"stub"}]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.Unmarshal(body, &req)
+		last := ""
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "user":
+				last = m.Content
+			case "system":
+				mu.Lock()
+				systems = append(systems, m.Content)
+				mu.Unlock()
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		send := func(s string) { fmt.Fprint(w, s); f.Flush() }
+		content := "Echo: " + last
+		if strings.Contains(last, "propose") {
+			content = "```markdown\nbe nice\n- use English only\n```\n"
+		}
+		cj, _ := json.Marshal(content)
+		send("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Thinking about " + last + "\"}}]}\n\n")
+		send("data: {\"choices\":[{\"delta\":{\"content\":" + string(cj) + "}}]}\n\n")
+		send("data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n")
+		send("data: [DONE]\n\n")
+	}))
+	return up, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]string, len(systems))
+		copy(out, systems)
+		return out
+	}
+}
+
+func TestMessagePayloadsCarryHTML(t *testing.T) {
+	ls := newLiveServerUpstream(t, echoUpstream())
+	seedFile(t, ls, "p.md", "be nice")
+	sess := createSession(t, ls, "p.md")
+	sid := sess["id"].(string)
+
+	// Single-row POST payload carries html.
+	code, body := ls.req("POST", "/api/sessions/"+sid+"/messages", map[string]any{"text": "# Hi **bold** text"})
+	if code != http.StatusCreated {
+		t.Fatalf("add message: %d %s", code, body)
+	}
+	created := mustJSON[map[string]any](t, body)
+	userHTML, _ := created["html"].(string)
+	if !strings.Contains(userHTML, "<h1>") || !strings.Contains(userHTML, "<strong>bold</strong>") {
+		t.Fatalf("user message html not markdown-rendered: %q", userHTML)
+	}
+
+	// SSE done frame carries the rendered assistant row.
+	evs := ls.streamSSETest("/api/sessions/"+sid+"/generate", map[string]any{})
+	if len(evs) == 0 || evs[len(evs)-1].Event != "done" {
+		t.Fatalf("bad events: %+v", evs)
+	}
+	done := evs[len(evs)-1].Data["message"].(map[string]any)
+	html, _ := done["html"].(string)
+	if !strings.Contains(html, "Echo:") {
+		t.Fatalf("done frame message html missing rendered text: %v", done)
+	}
+
+	// Session transcript: every message carries html.
+	code, body = ls.req("GET", "/api/sessions/"+sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get session: %d %s", code, body)
+	}
+	payload := mustJSON[map[string]any](t, body)
+	msgs := payload["messages"].([]any)
+	for i, raw := range msgs {
+		if h, _ := raw.(map[string]any)["html"].(string); h == "" {
+			t.Fatalf("message %d missing html: %v", i, raw)
+		}
+	}
+}
+
+func TestHelperGenerateIncludesChatContext(t *testing.T) {
+	up, systems := captureProposalUpstream(t)
+	ls := newLiveServerUpstream(t, up)
+	seedFile(t, ls, "p.md", "be nice")
+
+	// Two chat sessions; B is the most recently active.
+	sessA := createSession(t, ls, "p.md")
+	sa := sessA["id"].(string)
+	addUserMessage(t, ls, sa, nil, "alpha question")
+	if evs := ls.streamSSETest("/api/sessions/"+sa+"/generate", map[string]any{}); len(evs) == 0 || evs[len(evs)-1].Event != "done" {
+		t.Fatalf("chat A generate: %+v", evs)
+	}
+	time.Sleep(10 * time.Millisecond) // updated_at has ms resolution
+
+	sessB := createSession(t, ls, "p.md")
+	sb := sessB["id"].(string)
+	addUserMessage(t, ls, sb, nil, "beta question")
+	if evs := ls.streamSSETest("/api/sessions/"+sb+"/generate", map[string]any{}); len(evs) == 0 || evs[len(evs)-1].Event != "done" {
+		t.Fatalf("chat B generate: %+v", evs)
+	}
+
+	code, body := ls.req("POST", "/api/sessions", map[string]any{"file": "p.md", "kind": "helper"})
+	if code != http.StatusCreated {
+		t.Fatalf("create helper session: %d %s", code, body)
+	}
+	sh := mustJSON[map[string]any](t, body)["id"].(string)
+	addUserMessage(t, ls, sh, nil, "propose an edit")
+	if evs := ls.streamSSETest("/api/sessions/"+sh+"/generate", map[string]any{}); len(evs) == 0 || evs[len(evs)-1].Event != "done" {
+		t.Fatalf("helper generate: %+v", evs)
+	}
+
+	all := systems()
+	if len(all) < 3 {
+		t.Fatalf("expected 3 upstream calls, got %d", len(all))
+	}
+	if strings.Contains(all[0], "CURRENT PROMPT FILE") {
+		t.Fatalf("chat session must not get the helper system prompt: %q", all[0])
+	}
+	sys := all[len(all)-1]
+	for _, want := range []string{
+		"You are an editor of the prompt file",
+		"CURRENT PROMPT FILE:",
+		"be nice",
+		"RECENT MAIN-CHAT CONTEXT",
+		"user: beta question",
+		"assistant: Echo: beta question",
+		"reasoning: Thinking about beta question",
+	} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("helper system missing %q:\n%s", want, sys)
+		}
+	}
+	if strings.Contains(sys, "alpha question") {
+		t.Errorf("helper system must not include the older chat session:\n%s", sys)
+	}
+}
+
+func TestHelperResendUsesHelperSystemAndProposes(t *testing.T) {
+	up, systems := captureProposalUpstream(t)
+	ls := newLiveServerUpstream(t, up)
+	seedFile(t, ls, "p.md", "be nice")
+	code, body := ls.req("POST", "/api/sessions", map[string]any{"file": "p.md", "kind": "helper"})
+	if code != http.StatusCreated {
+		t.Fatalf("create helper session: %d %s", code, body)
+	}
+	sid := mustJSON[map[string]any](t, body)["id"].(string)
+	u1 := addUserMessage(t, ls, sid, nil, "propose an edit")
+	userID := u1["id"].(string)
+
+	evs := ls.streamSSETest("/api/sessions/"+sid+"/generate", map[string]any{})
+	if len(evs) == 0 || evs[len(evs)-1].Event != "done" {
+		t.Fatalf("generate: %+v", evs)
+	}
+
+	code, body = ls.req("POST", "/api/sessions/"+sid+"/resend", map[string]any{"messageId": userID, "text": "propose again EDITED"})
+	if code != http.StatusOK {
+		t.Fatalf("resend: %d %s", code, body)
+	}
+
+	all := systems()
+	if len(all) < 2 {
+		t.Fatalf("expected 2 upstream calls, got %d", len(all))
+	}
+	sys := all[len(all)-1]
+	for _, want := range []string{"You are an editor of the prompt file", "CURRENT PROMPT FILE:", "be nice"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("resend system missing %q:\n%s", want, sys)
+		}
+	}
+
+	// The regenerated assistant row carries a proposal and rendered html.
+	code, body = ls.req("GET", "/api/sessions/"+sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get session: %d %s", code, body)
+	}
+	payload := mustJSON[map[string]any](t, body)
+	msgs := payload["messages"].([]any)
+	last := msgs[len(msgs)-1].(map[string]any)
+	if last["role"] != "assistant" {
+		t.Fatalf("expected assistant head, got %v", last)
+	}
+	pe, ok := last["proposedEdit"].(map[string]any)
+	if !ok {
+		t.Fatalf("regenerated assistant row missing proposedEdit: %v", last)
+	}
+	if pe["text"] != "be nice\n- use English only" {
+		t.Fatalf("unexpected proposal text %v", pe["text"])
+	}
+	if h, _ := last["html"].(string); h == "" {
+		t.Fatalf("regenerated assistant row missing html: %v", last)
 	}
 }
 

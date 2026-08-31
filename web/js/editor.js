@@ -22,6 +22,7 @@ export function mountEditor(root, h) {
     fileSelect: $('#file-select', root),
     btnNew: $('#btn-new-file', root),
     revSelect: $('#rev-select', root),
+    syncInd: $('#sync-ind', root),
     btnDiff: $('#btn-diff-toggle', root),
     editor: $('#editor', root),
     revView: $('#rev-view', root),
@@ -48,6 +49,12 @@ export function mountEditor(root, h) {
   ui.revSelect.addEventListener('change', () => selectRev(ui.revSelect.value));
   ui.btnDiff.addEventListener('click', toggleDiff);
   ui.editor.addEventListener('input', onInput);
+  // Save on focus loss: leaving the editor while dirty persists immediately.
+  ui.editor.addEventListener('focusout', () => {
+    if (revMode) return;
+    clearTimeout(dirtyTimer);
+    if (state.dirty) save().catch(() => {});
+  });
   ui.btnReload.addEventListener('click', reloadFromDisk);
   ui.overlayClose.addEventListener('click', closeOverlay);
 
@@ -58,6 +65,8 @@ export function mountEditor(root, h) {
       flush();
     }
   });
+
+  renderSyncInd();
 
   return {
     refresh,
@@ -162,6 +171,7 @@ function renderRevs() {
     o.textContent = '#' + (i + 1) + ' · ' + fmtHM(rv.savedAt);
     sel.appendChild(o);
   });
+  renderSyncInd();
 }
 
 async function selectRev(id) {
@@ -300,13 +310,14 @@ function onInput() {
   setDirty(true);
   renderMeta();
   clearTimeout(dirtyTimer);
-  dirtyTimer = setTimeout(() => { save().catch(() => {}); }, 800);
+  dirtyTimer = setTimeout(() => { save().catch(() => {}); }, 30000);
 }
 
 function setDirty(v) {
   state.dirty = v;
   renderMeta();
   emit();
+  renderSyncInd();
 }
 
 // Persist buffer. Returns a promise that resolves once the server has the text.
@@ -391,6 +402,14 @@ function renderMeta() {
 
 function renderSaving(on) {
   ui.saveInd.textContent = on ? 'saving…' : '';
+  renderSyncInd();
+}
+
+function renderSyncInd() {
+  if (!ui || !ui.syncInd) return;
+  const synced = !state.dirty && !state.saving;
+  ui.syncInd.textContent = synced ? '✓' : '…';
+  ui.syncInd.title = synced ? 'Saved: in sync with latest revision' : 'Unsaved changes';
 }
 
 function toastError(msg) {

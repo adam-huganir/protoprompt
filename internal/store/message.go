@@ -15,6 +15,10 @@ type Message struct {
 	ParentID       *string      `json:"parentId"`
 	Role           string       `json:"role"`
 	Text           string       `json:"text"`
+	// Html is the escaped markdown rendering of Text, computed in memory at
+	// serialization time (no DB column); empty for rows that have not been
+	// rendered yet.
+	Html           string       `json:"html,omitempty"`
 	ReasoningText  string       `json:"reasoningText"`
 	Status         string       `json:"status"`
 	Preview        bool         `json:"preview"`

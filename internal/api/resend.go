@@ -60,6 +60,7 @@ func (s *Server) resend(w http.ResponseWriter, r *http.Request, id string) {
 	if !ok {
 		return
 	}
+	renderHTML(u2)
 	str.event("meta", map[string]any{"messageId": u2.ID, "message": u2})
 	str.event("done", map[string]any{"messageId": u2.ID, "message": u2})
 
@@ -72,6 +73,10 @@ func (s *Server) resend(w http.ResponseWriter, r *http.Request, id string) {
 	prevID := &u2.ID
 	failed := false
 	reported := false
+	sys := rev.Text
+	if sess.Kind == "helper" {
+		sys = s.helperSystem(sess.File, rev.Text)
+	}
 	for idx := range path {
 		node := path[idx]
 		if node.Role == "user" {
@@ -80,6 +85,7 @@ func (s *Server) resend(w http.ResponseWriter, r *http.Request, id string) {
 				failed = true
 				break
 			}
+			renderHTML(cp)
 			str.event("meta", map[string]any{"messageId": cp.ID, "message": cp})
 			str.event("done", map[string]any{"messageId": cp.ID, "message": cp})
 			prevID = &cp.ID
@@ -91,11 +97,15 @@ func (s *Server) resend(w http.ResponseWriter, r *http.Request, id string) {
 			failed = true
 			break
 		}
+		renderHTML(row)
 		str.event("meta", map[string]any{"messageId": row.ID, "message": row})
-		if serr := s.streamAssistant(r.Context(), str, sess, row, rev.Text, false); serr != nil {
+		if serr := s.streamAssistant(r.Context(), str, sess, row, sys, false); serr != nil {
 			failed = true
 			reported = true
 			break
+		}
+		if sess.Kind == "helper" {
+			s.saveHelperProposal(row.ID, sess.File, rev.Text)
 		}
 		prevID = &row.ID
 	}

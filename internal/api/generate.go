@@ -135,25 +135,33 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, id string) {
 	if !ok {
 		return
 	}
+	renderHTML(row)
 	str.event("meta", map[string]any{"messageId": row.ID, "message": row})
 	sys := rev.Text
 	if sess.Kind == "helper" {
-		sys = s.helperSystem(rev.Text)
+		sys = s.helperSystem(sess.File, rev.Text)
 	}
 	s.streamAssistant(r.Context(), str, sess, row, sys, preview)
 
 	if sess.Kind == "helper" {
-		fresh, err := s.store.GetMessage(row.ID)
-		if err == nil && fresh.Status == "done" {
-			if prop := extractFenced(fresh.Text); prop != "" {
-				hunks := diffx.Diff(rev.Text, prop)
-				if err := s.store.SaveProposedEdit(fresh.ID, sess.File, prop, hunks); err != nil {
-					// best-effort: the reply is already delivered; a failed save just means no proposal panel
-				}
-			}
-		}
+		s.saveHelperProposal(row.ID, sess.File, rev.Text)
 	}
 }
+
+// saveHelperProposal extracts a fenced block from a finished assistant row and
+// stores it as a proposal for the file. Best-effort: a failed save just means
+// no proposal panel; the reply is already delivered.
+func (s *Server) saveHelperProposal(rowID, file, baseText string) {
+	fresh, err := s.store.GetMessage(rowID)
+	if err != nil || fresh.Status != "done" {
+		return
+	}
+	if prop := extractFenced(fresh.Text); prop != "" {
+		hunks := diffx.Diff(baseText, prop)
+		_ = s.store.SaveProposedEdit(fresh.ID, file, prop, hunks)
+	}
+}
+
 
 // streamAssistant runs one upstream call for a pre-inserted assistant row and
 // emits delta/done/error frames. Returns nil on success.
@@ -212,6 +220,7 @@ func (s *Server) finalizeRow(row *store.Message, res llm.Result, status, errMsg 
 	if err != nil {
 		return row
 	}
+	renderHTML(fresh)
 	return fresh
 }
 

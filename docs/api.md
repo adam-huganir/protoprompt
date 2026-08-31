@@ -6,7 +6,7 @@ Message rows are the full object:
 ```json
 {
   "id": "...", "parentId": "..." , "role": "user|assistant",
-  "text": "...", "reasoningText": "...", "status": "done|streaming|error",
+  "text": "...", "html": "...", "reasoningText": "...", "status": "done|streaming|error",
   "preview": false, "promptRevId": "...", "model": "...",
   "reasoningEffort": "", "temperature": 1, "maxTokens": null,
   "error": "", "promptTokens": null, "outputTokens": null,
@@ -17,6 +17,13 @@ Message rows are the full object:
   "proposedEdit": null
 }
 ```
+
+`html` is the escaped markdown rendering of `text` (raw HTML in the source is
+escaped, never passed through). It is computed at serialization time — there
+is no stored column — and omitted when empty (e.g. a streaming row that has
+not been rendered yet); clients should fall back to rendering `text`
+themselves until it appears. Every message payload carries it: the session's
+transcript, single-row responses, and the SSE `meta`/`done` frames.
 
 `siblings` lists ALL accepted same-parent, same-role rows ordered by
 creation (each entry: its `siblingIndex`). `previewMessage` (set only in
@@ -65,11 +72,11 @@ Session: { "id","file","title","model","reasoningEffort","temperature",
 
 - `POST /api/messages/{id}/accept` → Session (400 when row is not a done preview)
 - `DELETE /api/messages/{id}` → `{ok: true}` (cascades to descendants)
-- `GET /api/messages/{id}/context` → `{system, history: [{role, content}]}` — exactly what the next generation would send (system comes from the message's `promptRevId`, falling back to the file's latest revision)
+- `GET /api/messages/{id}/context` → `{system, history: [{role, content}]}` — the prompt text and history a next generation would send: `system` is the resolved prompt file text (the message's `promptRevId`, falling back to the file's latest revision). For `helper` sessions the actual generation wraps that text in the helper system prompt (see Generation streams), which this endpoint does not return.
 
 ## Prompt-helper proposals
 
-- `POST /api/messages/{id}/proposed/accept` → `{revId}` (null when the proposed text equals the current file) — saves the proposal's `text` as a new revision of its prompt file; 404 when the message has no proposal.
+- `POST /api/messages/{id}/proposed/accept` → `{revId}` (null when the proposed text equals the current file) — saves the proposal's `text` as a new revision of its prompt file and removes the proposal (a subsequent `GET /api/sessions/{id}` no longer carries it); 404 when the message has no proposal.
 - `DELETE /api/messages/{id}/proposed` → `{ok: true}` — drops the proposal for that message (absent rows are not an error).
 
 Proposals exist only for replies generated in a `helper` session whose
@@ -78,7 +85,7 @@ content.
 
 ## Generation streams (SSE over POST)
 
-For `helper` sessions the system prompt is `helperPreamble + "CURRENT PROMPT FILE:\n" + latest-revision-text`; if the reply contains a fenced code block, that block's content is stored as a proposal for the message (see above), surfaced by re-fetching `GET /api/sessions/{id}`. The streamed `done` frame does not carry the proposal.
+For `helper` sessions the system prompt is `helperPreamble + "CURRENT PROMPT FILE:\n" + latest-revision-text`, followed — when a `chat` session with messages exists for the same file — by a bounded context block: the most recently active chat session's transcript (user text, assistant output, and reasoning), newest first, capped at ~8k chars / 40 messages. The preamble requires unambiguous change requests to be answered with the complete new file in ONE fenced code block, and ambiguous requests — or requests referencing context the helper cannot see — to be met with a clarifying question; it never guesses or fabricates a change. If the reply contains a fenced code block, that block's content is stored as a proposal for the message (see above), surfaced by re-fetching `GET /api/sessions/{id}`; accepting the proposal removes it. The streamed `done` frame does not carry the proposal, but carries the final row including its `html`.
 
 Response is `text/event-stream`; frames use `event:` + `data:` (JSON).
 Events: `meta` (row created), `delta` (`{kind:"reasoning"|"content", text}`), `done` (`{message: Message}` final row), `error` (`{message}`), and `complete` (resend only, `{headMessageId}` after the whole chain).
@@ -87,7 +94,7 @@ Events: `meta` (row created), `delta` (`{kind:"reasoning"|"content", text}`), `d
   - No `previewFor`: append a fresh assistant generation after the current head (creates the row, streams it, head moves to it).
   - With `previewFor` (must be an accepted row of this session): stream a preview for that row's position. Any older preview of the same position is deleted first; a currently *streaming* preview returns 409 before the stream starts.
 - `POST /api/sessions/{id}/resend` `{messageId, text}`
-  - `messageId` must be an accepted row; `text` replaces it as a new sibling user message under the same parent; the primary path after it is regenerated assistant-by-assistant. Streams `meta` (the new user row), `delta`…, `done`, then `meta`/`done` pairs for each regenerated assistant, finally `complete`.
+  - `messageId` must be an accepted row; `text` replaces it as a new sibling user message under the same parent; the primary path after it is regenerated assistant-by-assistant. For `helper` sessions the regeneration uses the same helper system prompt (with chat context) and extracts proposals exactly as `generate` does. Streams `meta` (the new user row), `delta`…, `done`, then `meta`/`done` pairs for each regenerated assistant, finally `complete`.
 
 On upstream failure mid-stream: `done` with `{message: {...status:"error", error:"..."}}`.
 
