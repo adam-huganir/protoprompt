@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,9 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"protoprompt/internal/diffx"
 )
 
 // Rev is one saved revision of a prompt file.
@@ -287,4 +291,43 @@ func (s *Store) DiskChanged(file string) (bool, error) {
 
 func nowMS() int64 {
 	return nextTS()
+}
+
+// SaveProposedEdit stores or replaces the helper-model proposal for a message.
+func (s *Store) SaveProposedEdit(messageID, file, text string, hunks []diffx.Hunk) error {
+	hunksJSON, err := json.Marshal(hunks)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.Exec(
+		`INSERT OR REPLACE INTO proposed_edit (message_id, file, text, hunks, created_at) VALUES (?, ?, ?, ?, ?)`,
+		messageID, file, text, string(hunksJSON), time.Now().UnixMilli(),
+	)
+	return err
+}
+
+// GetProposedEdit returns the proposal for a message, or nil when absent.
+func (s *Store) GetProposedEdit(messageID string) (*ProposedEdit, error) {
+	var pe ProposedEdit
+	var hunksJSON string
+	err := s.DB.QueryRow(
+		`SELECT file, text, hunks FROM proposed_edit WHERE message_id = ?`,
+		messageID,
+	).Scan(&pe.File, &pe.Text, &hunksJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(hunksJSON), &pe.Hunks); err != nil {
+		pe.Hunks = nil
+	}
+	return &pe, nil
+}
+
+// DeleteProposedEdit removes a proposal; absent rows are not an error.
+func (s *Store) DeleteProposedEdit(messageID string) error {
+	_, err := s.DB.Exec(`DELETE FROM proposed_edit WHERE message_id = ?`, messageID)
+	return err
 }

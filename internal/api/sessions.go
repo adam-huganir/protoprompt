@@ -9,6 +9,13 @@ import (
 	"protoprompt/internal/store"
 )
 
+// helperPreamble is the fixed instruction prefix for the prompt-helper model.
+const helperPreamble = "You are an editor of the prompt file shown below. When the user asks you to change the prompt, reply with the COMPLETE new file text inside ONE fenced code block (```markdown ... ```), and nothing else that would prevent parsing. If no change is requested, answer plainly."
+
+func (s *Server) helperSystem(revText string) string {
+	return helperPreamble + "\n\nCURRENT PROMPT FILE:\n" + revText
+}
+
 // sessionRoutes handles /api/sessions and /api/sessions/{id}/....
 func (s *Server) sessionRoutes(w http.ResponseWriter, r *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/sessions"), "/")
@@ -76,6 +83,10 @@ func (s *Server) messageRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, sess)
 	case sub == "context" && r.Method == http.MethodGet:
 		s.messageContext(w, r, id)
+	case sub == "proposed/accept" && r.Method == http.MethodPost:
+		s.acceptProposed(w, r, id)
+	case sub == "proposed" && r.Method == http.MethodDelete:
+		s.discardProposed(w, r, id)
 	default:
 		writeErr(w, http.StatusNotFound, "not found")
 	}
@@ -95,7 +106,11 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "file query parameter required")
 		return
 	}
-	sessions, err := s.store.ListSessions(file, 100)
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		kind = "chat"
+	}
+	sessions, err := s.store.ListSessions(file, kind, 100)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -112,6 +127,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Temperature  *float64       `json:"temperature"`
 		MaxTokens    *int           `json:"maxTokens"`
 		ExtraBody    map[string]any `json:"extraBody"`
+		Kind         string         `json:"kind"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -131,7 +147,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	if body.Temperature != nil {
 		temp = *body.Temperature
 	}
-	sess, err := s.store.CreateSession(body.File, body.Title, body.Model, body.ReasoningEff, temp, body.MaxTokens, body.ExtraBody)
+	sess, err := s.store.CreateSession(body.File, body.Title, body.Model, body.ReasoningEff, temp, body.MaxTokens, body.ExtraBody, body.Kind)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -163,6 +179,14 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request, id string) {
 			}
 			if pv != nil && pv.ID != msgs[i].ID {
 				msgs[i].PreviewMessage = pv
+			}
+			pe, err := s.store.GetProposedEdit(msgs[i].ID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if pe != nil {
+				msgs[i].ProposedEdit = pe
 			}
 		}
 	}
@@ -359,4 +383,31 @@ func (s *Server) sessionModel(sess *store.Session) (model, effort string) {
 		effort = s.cfg.ReasoningEff
 	}
 	return
+}
+
+// acceptProposed saves the proposed text as a new revision of the prompt file.
+func (s *Server) acceptProposed(w http.ResponseWriter, r *http.Request, id string) {
+	pe, err := s.store.GetProposedEdit(id)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if pe == nil {
+		writeErr(w, http.StatusNotFound, "no proposal for this message")
+		return
+	}
+	revID, err := s.store.SaveFile(pe.File, pe.Text)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"revId": revID}) // revID is null when text was unchanged
+}
+
+func (s *Server) discardProposed(w http.ResponseWriter, r *http.Request, id string) {
+	if err := s.store.DeleteProposedEdit(id); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

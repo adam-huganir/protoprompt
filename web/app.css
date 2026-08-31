@@ -75,6 +75,12 @@ body {
 .seg button.active { background: var(--bg-2); color: var(--fg); }
 .seg button:hover { color: var(--fg); }
 
+.chat-tabs { border-radius: 0; border-left: none; border-right: none; }
+.chat-tabs button { flex: 1; text-align: center; }
+
+.prop-panel { margin: 8px 0; border: 1px solid var(--border-2); border-radius: 6px; padding: 8px; }
+.prop-diff { max-height: 320px; overflow-y: auto; }
+
 #hdr-chat-slot { display: flex; gap: 4px; align-items: center; }
 #hdr-chat-slot select {
   background: var(--bg-2);

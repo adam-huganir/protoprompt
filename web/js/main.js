@@ -26,6 +26,7 @@ const chat = mountChat($('#chat-pane'), {
   toast,
   getRevInfo: () => editorApi.getRevInfo(),
   flush: () => editorApi.flush(),
+  openFile: (path) => editorApi.open(path),
 });
 const editorApi = mountEditor($('#editor-pane'), {
   onCurrentFileChanged: (path) => { onFileChanged(path); },
@@ -45,6 +46,7 @@ async function boot() {
   buildHeader();
   setupModes();
   setupSplitter();
+  setupChatTabs();
   try {
     await editorApi.refresh();
   } catch { /* ignore */ }
@@ -102,7 +104,7 @@ async function refreshSessions() {
     list = [];
   } else {
     try {
-      list = await fetchJSON('/api/sessions?file=' + encodeURIComponent(state.currentFile));
+      list = await fetchJSON('/api/sessions?file=' + encodeURIComponent(state.currentFile) + '&kind=' + encodeURIComponent(state.activeKind));
     } catch (e) {
       toast('error', 'sessions load failed: ' + e.message);
       list = [];
@@ -144,6 +146,23 @@ async function onFileChanged(path) {
   await refreshSessions();
   const slot = $('#hdr-file-slot');
   if (slot) slot.textContent = path || '';
+}
+
+// ---------- chat tabs ----------
+
+function setupChatTabs() {
+  const saved = localStorage.getItem('cv.chatTab');
+  if (saved === 'chat' || saved === 'helper') state.activeKind = saved;
+  const tabs = document.querySelectorAll('#chat-tabs button');
+  for (const b of tabs) {
+    if (b.dataset.kind === state.activeKind) b.classList.add('active'); else b.classList.remove('active');
+    b.addEventListener('click', () => {
+      state.activeKind = b.dataset.kind;
+      localStorage.setItem('cv.chatTab', state.activeKind);
+      for (const x of tabs) x.classList.toggle('active', x === b);
+      refreshSessions();
+    });
+  }
 }
 
 // ---------- mode toggle + splitter ----------

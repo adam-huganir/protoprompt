@@ -19,15 +19,19 @@ type Session struct {
 	HeadMessage  *string        `json:"headMessageId"`
 	CreatedAt    int64          `json:"createdAt"`
 	UpdatedAt    int64          `json:"updatedAt"`
+	Kind         string         `json:"-"`
 
 	extraJSON string // raw column value
 }
 
 // CreateSession inserts a session row; empty model defaults stay empty (the
 // handler applies config defaults before calling).
-func (s *Store) CreateSession(file, title, model, effort string, temperature float64, maxTokens *int, extraBody map[string]any) (*Session, error) {
+func (s *Store) CreateSession(file, title, model, effort string, temperature float64, maxTokens *int, extraBody map[string]any, kind string) (*Session, error) {
 	if extraBody == nil {
 		extraBody = map[string]any{}
+	}
+	if kind == "" {
+		kind = "chat"
 	}
 	if temperature == 0 {
 		temperature = 1
@@ -41,12 +45,13 @@ func (s *Store) CreateSession(file, title, model, effort string, temperature flo
 		ID: NewID(), File: file, Title: title, Model: model,
 		ReasoningEff: effort, Temperature: temperature, MaxTokens: maxTokens,
 		ExtraBody: extraBody, CreatedAt: now, UpdatedAt: now,
+		Kind: kind,
 	}
 	_, err = s.DB.Exec(
-		`INSERT INTO session (id, file, title, model, reasoning_effort, temperature, max_tokens, extra_json, head_message_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+		`INSERT INTO session (id, file, title, model, reasoning_effort, temperature, max_tokens, extra_json, head_message_id, created_at, updated_at, kind)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
 		sess.ID, sess.File, sess.Title, sess.Model, sess.ReasoningEff,
-		sess.Temperature, sess.MaxTokens, string(exj), sess.CreatedAt, sess.UpdatedAt,
+		sess.Temperature, sess.MaxTokens, string(exj), sess.CreatedAt, sess.UpdatedAt, sess.Kind,
 	)
 	if err != nil {
 		return nil, err
@@ -58,7 +63,7 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var s Session
 	var exj string
 	err := row.Scan(&s.ID, &s.File, &s.Title, &s.Model, &s.ReasoningEff,
-		&s.Temperature, &s.MaxTokens, &exj, &s.HeadMessage, &s.CreatedAt, &s.UpdatedAt)
+		&s.Temperature, &s.MaxTokens, &exj, &s.HeadMessage, &s.CreatedAt, &s.UpdatedAt, &s.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +74,7 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	return &s, nil
 }
 
-const sessionCols = `id, file, title, model, reasoning_effort, temperature, max_tokens, extra_json, head_message_id, created_at, updated_at`
+const sessionCols = `id, file, title, model, reasoning_effort, temperature, max_tokens, extra_json, head_message_id, created_at, updated_at, kind`
 
 func (s *Store) GetSession(id string) (*Session, error) {
 	row := s.DB.QueryRow(`SELECT `+sessionCols+` FROM session WHERE id = ?`, id)
@@ -81,13 +86,13 @@ func (s *Store) GetSession(id string) (*Session, error) {
 }
 
 // ListSessions returns sessions for a prompt file, newest first.
-func (s *Store) ListSessions(file string, limit int) ([]Session, error) {
+func (s *Store) ListSessions(file, kind string, limit int) ([]Session, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.DB.Query(
-		`SELECT `+sessionCols+` FROM session WHERE file = ? ORDER BY updated_at DESC LIMIT ?`,
-		file, limit,
+		`SELECT `+sessionCols+` FROM session WHERE file = ? AND kind = ? ORDER BY updated_at DESC LIMIT ?`,
+		file, kind, limit,
 	)
 	if err != nil {
 		return nil, err

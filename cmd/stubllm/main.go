@@ -135,16 +135,25 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := ""
+	systemText := ""
 	totalChars := 0
 	for _, m := range req.Messages {
 		totalChars += utf8.RuneCountInString(m.Content)
-		if m.Role == "user" {
+		switch m.Role {
+		case "user":
 			input = strings.TrimSpace(m.Content)
+		case "system":
+			if systemText == "" {
+				systemText = m.Content
+			}
 		}
 	}
 
 	reasoningText := "Thinking about " + input + "…"
 	finalText := "Echo: " + input
+	if strings.Contains(strings.ToLower(input), "propose") {
+		finalText = "```markdown\n" + systemText + "\n- new section added by helper\n```\n"
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

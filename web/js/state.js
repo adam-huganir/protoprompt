@@ -10,6 +10,7 @@ export const state = {
   session: null,         // { session, messages, latestRevId, diskChangedSinceLatestRev }
   currentSessionId: null,
   streaming: false,      // a generate/resend stream is active
+  activeKind: 'chat',    // tab: 'chat' | 'helper'
 };
 
 const subs = new Set();

@@ -1,7 +1,7 @@
 // Chat pane: transcript rendering, streaming generate/stop, sibling
 // navigation, preview+accept, edit+resend. No framework; DOM directly.
 import { fetchJSON, streamSSE } from './api.js';
-import { showInlineDiff } from './editor.js';
+import { renderDiff, showInlineDiff } from './editor.js';
 import { applyHighlight, attachOverlay } from './mdhl.js';
 import { state } from './state.js';
 
@@ -85,7 +85,7 @@ async function selectSession(id) {
 async function newSession() {
   if (!state.currentFile) { toast('error', 'open a prompt file first'); return; }
   try {
-    const body = { file: state.currentFile };
+    const body = { file: state.currentFile, kind: state.activeKind };
     if (pendingModel) body.model = pendingModel;
     const s = await fetchJSON('/api/sessions', {
       method: 'POST',
@@ -371,6 +371,8 @@ function renderMsg(m) {
     el.appendChild(e);
   }
 
+  if (m.role === 'assistant' && m.proposedEdit) el.appendChild(renderProposal(m));
+
   el.appendChild(renderActions(m));
   const nav = renderSiblingNav(m);
   if (nav) el.appendChild(nav);
@@ -436,6 +438,39 @@ function action(label, title) {
   b.textContent = label;
   b.title = title;
   return b;
+}
+
+function renderProposal(m) {
+  const panel = document.createElement('div');
+  panel.className = 'prop-panel';
+  const diff = document.createElement('div');
+  diff.className = 'prop-diff';
+  renderDiff(diff, m.proposedEdit, 'Proposed prompt edit');
+  panel.appendChild(diff);
+  const row = document.createElement('div');
+  row.className = 'row';
+  const acc = action('Accept', 'Save this text as a new revision of the prompt file');
+  acc.classList.add('btn-accent');
+  acc.addEventListener('click', async () => {
+    try {
+      await fetchJSON('/api/messages/' + encodeURIComponent(m.id) + '/proposed/accept', { method: 'POST' });
+      if (deps.openFile) deps.openFile(state.currentFile); // reload editor buffer from disk
+      toast('info', 'Prompt updated');
+      await loadSession(state.currentSessionId);
+    } catch (e) { toast('error', e.message); }
+  });
+  const drop = action('Discard', 'Drop this proposal');
+  drop.classList.add('btn-danger');
+  drop.addEventListener('click', async () => {
+    try {
+      await fetchJSON('/api/messages/' + encodeURIComponent(m.id) + '/proposed', { method: 'DELETE' });
+      await loadSession(state.currentSessionId);
+    } catch (e) { toast('error', e.message); }
+  });
+  row.appendChild(acc);
+  row.appendChild(drop);
+  panel.appendChild(row);
+  return panel;
 }
 
 function renderSiblingNav(m) {

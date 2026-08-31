@@ -7,7 +7,7 @@ import (
 func newSessionFixture(t *testing.T) (*Store, string) {
 	t.Helper()
 	s := newTestStore(t)
-	sess, err := s.CreateSession("p.md", "test", "m1", "", 1, nil, nil)
+	sess, err := s.CreateSession("p.md", "test", "m1", "", 1, nil, nil, "chat")
 	if err != nil {
 		t.Fatal(err)
 	}

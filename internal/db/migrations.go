@@ -45,6 +45,14 @@ var schema = []string{
 		extra_json        TEXT NOT NULL DEFAULT '{}',
 		head_message_id   TEXT REFERENCES message(id) ON DELETE SET NULL,
 		created_at        INTEGER NOT NULL,
-		updated_at        INTEGER NOT NULL
+		updated_at        INTEGER NOT NULL,
+		kind              TEXT NOT NULL DEFAULT 'chat'
+	)`,
+	`CREATE TABLE IF NOT EXISTS proposed_edit (
+		message_id TEXT PRIMARY KEY REFERENCES message(id) ON DELETE CASCADE,
+		file       TEXT NOT NULL,
+		text       TEXT NOT NULL,
+		hunks      TEXT NOT NULL,
+		created_at INTEGER NOT NULL
 	)`,
 }

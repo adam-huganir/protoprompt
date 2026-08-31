@@ -56,7 +56,11 @@ type liveServer struct {
 
 func newLiveServer(t *testing.T) *liveServer {
 	t.Helper()
-	up := echoUpstream()
+	return newLiveServerUpstream(t, echoUpstream())
+}
+
+func newLiveServerUpstream(t *testing.T, up *httptest.Server) *liveServer {
+	t.Helper()
 	t.Cleanup(up.Close)
 	h, err := db.Open(filepath.Join(t.TempDir(), "live.db"))
 	if err != nil {
@@ -82,6 +86,139 @@ func newLiveServer(t *testing.T) *liveServer {
 func (ls *liveServer) req(method, path string, body any) (int, []byte) {
 	ls.t.Helper()
 	return do(ls.t, ls.srv, method, path, body)
+}
+
+// proposalUpstream streams "Echo: <last>" by default, but when the last user
+// message contains "propose" it streams a full fenced markdown file so the
+// helper proposal path can be exercised (echoUpstream emits no fence).
+func proposalUpstream() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"object":"list","data":[{"id":"stub"}]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.Unmarshal(body, &req)
+		last := ""
+		for _, m := range req.Messages {
+			if m.Role == "user" {
+				last = m.Content
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		send := func(s string) { fmt.Fprint(w, s); f.Flush() }
+		content := "Echo: " + last
+		if strings.Contains(last, "propose") {
+			content = "```markdown\nbe nice\n- use English only\n```\n"
+		}
+		cj, _ := json.Marshal(content)
+		send("data: {\"choices\":[{\"delta\":{\"content\":" + string(cj) + "}}]}\n\n")
+		send("data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n")
+		send("data: [DONE]\n\n")
+	}))
+}
+
+func TestHelperGenerateProposesEdit(t *testing.T) {
+	ls := newLiveServerUpstream(t, proposalUpstream())
+	seedFile(t, ls, "p.md", "be nice")
+
+	code, body := ls.req("POST", "/api/sessions", map[string]any{"file": "p.md", "kind": "helper"})
+	if code != http.StatusCreated {
+		t.Fatalf("create helper session: %d %s", code, body)
+	}
+	sess := mustJSON[map[string]any](t, body)
+	sid, _ := sess["id"].(string)
+	if sid == "" {
+		t.Fatalf("no session id: %s", body)
+	}
+
+	addUserMessage(t, ls, sid, nil, "propose an edit")
+
+	events := ls.streamSSETest("/api/sessions/"+sid+"/generate", map[string]any{})
+	last := events[len(events)-1]
+	if last.Event != "done" {
+		t.Fatalf("expected done, got %s", last.Event)
+	}
+	asst := last.Data["message"].(map[string]any)
+	assistantID, _ := asst["id"].(string)
+	if assistantID == "" {
+		t.Fatal("no assistant message id")
+	}
+
+	code, body = ls.req("GET", "/api/sessions/"+sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get session: %d %s", code, body)
+	}
+	payload := mustJSON[map[string]any](t, body)
+	msgs := payload["messages"].([]any)
+	if len(msgs) < 2 {
+		t.Fatalf("expected at least 2 messages, got %d", len(msgs))
+	}
+	userMsg := msgs[0].(map[string]any)
+	if _, ok := userMsg["proposedEdit"]; ok {
+		t.Fatal("user message should have no proposedEdit")
+	}
+	asstMsg := msgs[1].(map[string]any)
+	pe, ok := asstMsg["proposedEdit"].(map[string]any)
+	if !ok {
+		t.Fatal("expected proposedEdit on assistant message")
+	}
+	if pe["text"] != "be nice\n- use English only" {
+		t.Fatalf("unexpected proposed text %q", pe["text"])
+	}
+	if hunks, ok := pe["hunks"].([]any); !ok || len(hunks) == 0 {
+		t.Fatal("expected non-empty hunks")
+	}
+
+	// Accept → saves a new revision.
+	code, body = ls.req("POST", "/api/messages/"+assistantID+"/proposed/accept", nil)
+	if code != http.StatusOK {
+		t.Fatalf("accept: %d %s", code, body)
+	}
+	acc := mustJSON[map[string]any](t, body)
+	if revID, _ := acc["revId"].(string); revID == "" {
+		t.Fatalf("expected revId, got %s", body)
+	}
+
+	code, body = ls.req("GET", "/api/files/p.md", nil)
+	if code != http.StatusOK {
+		t.Fatalf("get file: %d %s", code, body)
+	}
+	f := mustJSON[map[string]any](t, body)
+	if f["text"] != "be nice\n- use English only" {
+		t.Fatalf("unexpected file text %q", f["text"])
+	}
+
+	// Discard → ok, and proposal absent on reload.
+	code, body = ls.req("DELETE", "/api/messages/"+assistantID+"/proposed", nil)
+	if code != http.StatusOK {
+		t.Fatalf("discard: %d %s", code, body)
+	}
+	code, body = ls.req("GET", "/api/sessions/"+sid, nil)
+	if code != http.StatusOK {
+		t.Fatalf("reload session: %d %s", code, body)
+	}
+	payload = mustJSON[map[string]any](t, body)
+	msgs = payload["messages"].([]any)
+	asstMsg = msgs[1].(map[string]any)
+	if _, ok := asstMsg["proposedEdit"]; ok {
+		t.Fatal("proposedEdit should be absent after discard")
+	}
+
+	// Accept on a message with no proposal → 404.
+	userID, _ := userMsg["id"].(string)
+	code, body = ls.req("POST", "/api/messages/"+userID+"/proposed/accept", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d %s", code, body)
+	}
 }
 
 // streamSSETest POSTs url with body and collects SSE events until EOF.

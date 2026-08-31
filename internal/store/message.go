@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+
+	"protoprompt/internal/diffx"
 )
 
 // Message is one node in the session's message tree.
@@ -31,6 +33,14 @@ type Message struct {
 	SiblingIndex   int          `json:"siblingIndex"`
 	PreviewMessage *Message     `json:"previewMessage"`
 	Siblings       []SiblingRef `json:"siblings,omitempty"`
+	ProposedEdit   *ProposedEdit `json:"proposedEdit,omitempty"`
+}
+
+// ProposedEdit is a helper-model proposal to replace the whole prompt file.
+type ProposedEdit struct {
+	File  string       `json:"-"`
+	Text  string       `json:"text"`
+	Hunks []diffx.Hunk `json:"hunks"`
 }
 
 // SiblingRef points at one accepted sibling in creation order.

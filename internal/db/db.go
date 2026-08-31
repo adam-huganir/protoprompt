@@ -59,6 +59,15 @@ func applySchema(db *sql.DB) error {
 			return fmt.Errorf("apply schema: %w", err)
 		}
 	}
+
+	var hasKind int
+	if err := db.QueryRow("SELECT 1 FROM pragma_table_info('session') WHERE name='kind'").Scan(&hasKind); err == nil {
+		// column present — nothing to do
+	} else {
+		if _, err := db.Exec("ALTER TABLE session ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'"); err != nil {
+			return fmt.Errorf("migrate session.kind: %w", err)
+		}
+	}
 	return nil
 }
 

@@ -6,10 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 
+	"protoprompt/internal/diffx"
 	"protoprompt/internal/llm"
 	"protoprompt/internal/store"
 )
+
+var fenceRe = regexp.MustCompile("(?s)```(?:markdown|md)?\n(.*?)```")
+
+// extractFenced returns the first fenced code block's content, or "" when absent.
+func extractFenced(s string) string {
+	m := fenceRe.FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimRight(m[1], "\n")
+}
 
 // sseStream wraps the response writer for server-sent events.
 type sseStream struct {
@@ -122,7 +136,23 @@ func (s *Server) generate(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	str.event("meta", map[string]any{"messageId": row.ID, "message": row})
-	s.streamAssistant(r.Context(), str, sess, row, rev.Text, preview)
+	sys := rev.Text
+	if sess.Kind == "helper" {
+		sys = s.helperSystem(rev.Text)
+	}
+	s.streamAssistant(r.Context(), str, sess, row, sys, preview)
+
+	if sess.Kind == "helper" {
+		fresh, err := s.store.GetMessage(row.ID)
+		if err == nil && fresh.Status == "done" {
+			if prop := extractFenced(fresh.Text); prop != "" {
+				hunks := diffx.Diff(rev.Text, prop)
+				if err := s.store.SaveProposedEdit(fresh.ID, sess.File, prop, hunks); err != nil {
+					// best-effort: the reply is already delivered; a failed save just means no proposal panel
+				}
+			}
+		}
+	}
 }
 
 // streamAssistant runs one upstream call for a pre-inserted assistant row and
