@@ -79,10 +79,10 @@ Precedence: **defaults < `protoprompt.json` < environment < CLI flags.**
 
 ```json
 {
-  "baseUrl": "https://your-endpoint.example.com/v1",
+  "baseUrl": "https://llm.internal.huganir.com/v1",
   "apiKey": "sk-...",
-  "models": ["gpt-4o-mini"],
-  "defaultModel": "gpt-4o-mini",
+  "models": ["qwen3vl-2b"],
+  "defaultModel": "qwen3vl-2b",
   "reasoningEffort": "",
   "extraBody": {},
   "requestTimeoutSeconds": 300,
