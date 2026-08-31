@@ -208,6 +208,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, store.ErrName):
 		writeErr(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, store.ErrAccept):
+		writeErr(w, http.StatusConflict, err.Error())
 	default:
 		writeErr(w, http.StatusInternalServerError, err.Error())
 	}

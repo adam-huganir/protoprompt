@@ -12,7 +12,7 @@ export async function fetchJSON(path, init) {
     try {
       const j = await res.json();
       if (j && typeof j.error === 'string' && j.error) msg = j.error;
-    } catch (/* parse failure falls back to status text */) { /* ignore */ }
+    } catch { /* ignore */ }
     const err = new Error(msg);
     err.status = res.status;
     throw err;
@@ -41,7 +41,7 @@ function parseFrame(buf) {
   }
   if (!dataLines.length) return { event, data: null };
   let data = null;
-  try { data = JSON.parse(dataLines.join('\n')); } catch (/* keep null */) { /* ignore */ }
+  try { data = JSON.parse(dataLines.join('\n')); } catch { /* ignore */ }
   return { event, data };
 }
 
@@ -73,7 +73,7 @@ export async function streamSSE(url, body, { onMeta, onDelta, onDone, onError, o
     try {
       const j = await res.json();
       if (j && typeof j.error === 'string' && j.error) msg = j.error;
-    } catch (/* fall back to status text */) { /* ignore */ }
+    } catch { /* ignore */ }
     call(onError, { message: msg, status: res.status });
     return;
   }

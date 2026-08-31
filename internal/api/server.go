@@ -55,6 +55,8 @@ func (s *Server) dispatchAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case p == "/api/config" && r.Method == http.MethodGet:
 		s.handleConfig(w, r)
+	case p == "/api/models" && r.Method == http.MethodGet:
+		s.handleModels(w, r)
 	case p == "/api/files" || strings.HasPrefix(p, "/api/files/") ||
 		strings.HasPrefix(p, "/api/revs/"):
 		s.fileRoutes(w, r)
@@ -76,6 +78,25 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"hasKey":          s.cfg.APIKey != "",
 		"dir":             s.cfg.Dir,
 	})
+}
+
+// handleModels lists upstream model ids via the LLM client.
+func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.BaseURL == "" {
+		writeErr(w, http.StatusNotImplemented, "no baseUrl configured")
+		return
+	}
+	if s.cfg.APIKey == "" {
+		// Same condition + wording as generate/resend.
+		writeErr(w, http.StatusNotImplemented, "no API key configured")
+		return
+	}
+	ids, err := s.llm.Models(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": ids})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

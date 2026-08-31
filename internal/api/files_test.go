@@ -60,6 +60,14 @@ func TestFilesRoundTrip(t *testing.T) {
 		t.Fatalf("create file: %d %s", code, body)
 	}
 
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created["path"] != "system-prompt.md" || created["name"] != "system-prompt.md" {
+		t.Fatalf("created entry = %s", body)
+	}
+
 	// Duplicate → 409.
 	if code, _ := do(t, srv, "POST", "/api/files", map[string]string{"path": "system-prompt.md"}); code != http.StatusConflict {
 		t.Fatalf("duplicate create: got %d", code)
@@ -159,6 +167,13 @@ func TestFilesRoundTrip(t *testing.T) {
 	}
 	if len(files) != 2 {
 		t.Fatalf("expected 2 files, got %s", body)
+	}
+	// Paths must be workspace-relative slash paths; names are base names.
+	want := [][2]string{{"sub/deep.md", "deep.md"}, {"system-prompt.md", "system-prompt.md"}}
+	for i, f := range files {
+		if f["path"] != want[i][0] || f["name"] != want[i][1] {
+			t.Errorf("file %d = %v want %v", i, f, want[i])
+		}
 	}
 }
 

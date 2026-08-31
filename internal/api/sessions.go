@@ -44,6 +44,8 @@ func (s *Server) sessionRoutes(w http.ResponseWriter, r *http.Request) {
 		s.addMessage(w, r, id)
 	case sub == "generate" && r.Method == http.MethodPost:
 		s.generate(w, r, id)
+	case sub == "model" && r.Method == http.MethodPost:
+		s.setSessionModel(w, r, id)
 	case sub == "resend" && r.Method == http.MethodPost:
 		s.resend(w, r, id)
 	default:
@@ -187,6 +189,29 @@ func (s *Server) updateSession(w http.ResponseWriter, r *http.Request, id string
 		body.Model = s.cfg.DefaultModel
 	}
 	sess, err := s.store.UpdateSession(id, body.Title, body.Model, body.ReasoningEff, body.Temperature, body.MaxTokens, body.ExtraBody)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sess)
+}
+
+// setSessionModel switches a session's model; the next generation picks it up.
+// The value is not checked against any model list (see docs/api.md).
+func (s *Server) setSessionModel(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	model := strings.TrimSpace(body.Model)
+	if model == "" {
+		writeErr(w, http.StatusBadRequest, "model required")
+		return
+	}
+	sess, err := s.store.SetSessionModel(id, model)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

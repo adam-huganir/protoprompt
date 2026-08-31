@@ -1,6 +1,7 @@
 // Editor pane: file list, autosave, rev dropdown, diff render, disk-change banner.
 import { fetchJSON } from './api.js';
 import { state, emit } from './state.js';
+import { applyHighlight, attachOverlay } from './mdhl.js';
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 
@@ -13,6 +14,7 @@ let revMode = false;        // viewing a past revision (textarea readonly)
 let dirtyTimer = 0;
 let savePromise = null;
 let lastRevText = '';       // text of selected rev (for raw view mode)
+let edHl = null;            // attachOverlay handle for #editor
 
 export function mountEditor(root, h) {
   hooks = h || {};
@@ -35,6 +37,8 @@ export function mountEditor(root, h) {
     overlayClose: $('#diff-close', root),
   };
 
+  edHl = attachOverlay(ui.editor);
+  edHl.sync();
   ui.fileSelect.addEventListener('change', () => { if (ui.fileSelect.value) openFile(ui.fileSelect.value); });
   ui.btnNew.addEventListener('click', () => promptNewFile());
   ui.btnNew2.addEventListener('click', () => createFile(ui.newFileInput.value));
@@ -77,7 +81,10 @@ async function refresh() {
   }
   renderFileList();
   if (!state.files.length) {
+    currentPath = null;
+    state.currentFile = null;
     showEmpty();
+    if (hooks && hooks.onCurrentFileChanged) hooks.onCurrentFileChanged(null);
     return;
   }
   const still = currentPath && state.files.some(f => f.path === currentPath);
@@ -86,7 +93,6 @@ async function refresh() {
   } else {
     await openFile(state.files[0].path);
   }
-  if (hooks && hooks.onCurrentFileChanged) hooks.onCurrentFileChanged(currentPath);
 }
 
 function renderFileList() {
@@ -109,7 +115,7 @@ function renderFileList() {
 
 async function openFile(path) {
   // best-effort flush before switching buffers
-  try { await flush(); } catch (/* already surfaced */) { /* ignore */ }
+  try { await flush(); } catch { /* ignore */ }
   currentPath = path;
   state.currentFile = path;
   revMode = false;
@@ -126,10 +132,12 @@ async function openFile(path) {
   } catch (e) {
     fileData = null;
     toastError('could not open ' + path + ': ' + e.message);
+    edHl.sync();
     return;
   }
   lastText = fileData.text;
   ui.editor.value = fileData.text;
+  edHl.sync();
   setDirty(false);
   renderRevs();
   renderMeta();
@@ -137,6 +145,7 @@ async function openFile(path) {
   ui.empty.hidden = true;
   renderFileList();
   emit();
+  if (hooks && hooks.onCurrentFileChanged) hooks.onCurrentFileChanged(currentPath);
 }
 
 function renderRevs() {
@@ -165,16 +174,18 @@ async function selectRev(id) {
     ui.diffView.hidden = true;
     ui.btnDiff.disabled = true;
     lastRevText = '';
+    edHl.sync();
     return;
   }
   revMode = true;
   ui.btnDiff.disabled = false;
   ui.editor.hidden = true;
+  edHl.sync();
   ui.diffView.hidden = true;
   try {
     const rv = await fetchJSON('/api/revs/' + encodeURIComponent(id));
     lastRevText = rv.text;
-    ui.revView.textContent = rv.text;
+    applyHighlight(ui.revView, rv.text);
     ui.revView.hidden = false;
   } catch (e) {
     toastError('revision load failed: ' + e.message);
@@ -252,6 +263,14 @@ export function renderDiff(container, diff, head) {
   }
 }
 
+function showEmpty() {
+  ui.empty.hidden = false;
+  ui.editor.hidden = true;
+  edHl.sync();
+  ui.revView.hidden = true;
+  ui.diffView.hidden = true;
+}
+
 async function promptNewFile() {
   const name = prompt('New prompt file name (must end in .md):');
   if (!name) return;
@@ -271,10 +290,9 @@ async function createFile(rawName) {
   ui.newFileInput.value = '';
   try {
     state.files = await fetchJSON('/api/files');
-  } catch (/* keep existing */) { /* ignore */ }
+  } catch { /* ignore */ }
   renderFileList();
   await openFile(name);
-  if (hooks && hooks.onCurrentFileChanged) hooks.onCurrentFileChanged(currentPath);
 }
 
 function onInput() {
@@ -340,11 +358,12 @@ async function reloadFromDisk() {
   if (!currentPath) return;
   try {
     await openFile(currentPath);
-  } catch (/* surfaced */) { /* ignore */ }
+  } catch { /* ignore */ }
 }
 
 function closeOverlay() {
   ui.overlay.hidden = true;
+  edHl.sync();
   ui.overlay._msgId = null;
 }
 
@@ -352,6 +371,7 @@ function closeOverlay() {
 export async function showInlineDiff(h, msgId, promptRevId) {
   if (!currentPath) { toastError('no prompt file open'); return; }
   ui.overlay.hidden = false;
+  edHl.sync();
   ui.overlay._msgId = msgId;
   ui.overlayBody.textContent = 'Loading diff…';
   try {

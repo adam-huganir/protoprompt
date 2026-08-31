@@ -40,6 +40,7 @@ is taken verbatim after `/api/files/`).
 - `POST /api/sessions` `{file, title?, model?, reasoningEffort?, temperature?, maxTokens?, extraBody?}` → 201 Session
 - `GET /api/sessions/{id}` → `{session, messages: [Message...]}` — messages are the linear accepted transcript, oldest→newest, each filled with `siblings` and (assistant rows) `previewMessage`
 - `PUT /api/sessions/{id}` `{title, model, reasoningEffort, temperature, maxTokens, extraBody}` → Session
+- `POST /api/sessions/{id}/model` `{model}` → Session — switches the model used by subsequent generations; 400 when `model` is blank, 404 when the session is unknown. The value is never checked against the upstream list.
 - `DELETE /api/sessions/{id}` → `{ok: true}`
 - `POST /api/sessions/{id}/head` `{messageId, toLeaf}` → Session (409 when the message is not an accepted row of this session)
 - `POST /api/sessions/{id}/messages` `{parentId?, text}` → 201 Message row
@@ -72,3 +73,6 @@ On upstream failure mid-stream: `done` with `{message: {...status:"error", error
 
 - `GET /api/health` → `{ok: true}`
 - `GET /api/config` → `{baseUrl, models, defaultModel, reasoningEffort, hasKey, dir}`
+- `GET /api/models` → `{models: ["id", ...]}` (case-insensitively sorted, deduped) — 501 when no baseUrl or no API key is configured, 502 when the upstream call fails.
+
+The UI merges this list with `models`/`defaultModel` from `/api/config` plus the current session's model, so a fetch failure never empties the picker.

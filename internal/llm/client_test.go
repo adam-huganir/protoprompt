@@ -151,3 +151,82 @@ func TestBodyMergeExtraFirst(t *testing.T) {
 		t.Errorf("max_tokens missing: %s", s)
 	}
 }
+
+func TestModelsParsesDedupesSorts(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Errorf("path = %q, want /models", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"object":"list","data":[{"id":"zeta"},{"id":"alpha"},{"id":"alpha"},{"id":"  "}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "k1", 5*time.Second)
+	got, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if len(got) != 2 || got[0] != "alpha" || got[1] != "zeta" {
+		t.Errorf("Models = %v, want [alpha zeta]", got)
+	}
+	if gotAuth != "Bearer k1" {
+		t.Errorf("Authorization = %q", gotAuth)
+	}
+}
+
+func TestModelsStripsChatCompletionsSuffix(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		fmt.Fprint(w, `{"data":[{"id":"m1"}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL+"/v1/chat/completions", "k1", 5*time.Second)
+	got, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if gotPath != "/v1/models" {
+		t.Errorf("path = %q, want /v1/models", gotPath)
+	}
+	if len(got) != 1 || got[0] != "m1" {
+		t.Errorf("Models = %v", got)
+	}
+}
+
+func TestModelsEmptyListIsNotAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"object":"list","data":[]}`)
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k1", 5*time.Second)
+	got, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Models = %v, want empty", got)
+	}
+}
+
+func TestModelsNon2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"message":"bad key"}}`)
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "nope", 5*time.Second)
+	_, err := c.Models(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "upstream 401") || !strings.Contains(err.Error(), "bad key") {
+		t.Errorf("err = %v", err)
+	}
+}

@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 )
 
@@ -40,7 +39,10 @@ type SiblingRef struct {
 	Index int    `json:"siblingIndex"`
 }
 
-var ErrNotAccepted = errors.New("not an accepted message of this session")
+var (
+	ErrNotAccepted = errors.New("not an accepted message of this session")
+	ErrAccept      = errors.New("only a completed preview can be accepted")
+)
 
 const messageCols = `id, session_id, parent_id, role, text, reasoning_text, status, preview, prompt_rev_id, model, reasoning_effort, temperature, max_tokens, error, prompt_tokens, output_tokens, latency_ms, created_at, finished_at`
 
@@ -278,7 +280,7 @@ func (s *Store) AcceptPreview(id string) (*Session, error) {
 		return nil, err
 	}
 	if !m.Preview || m.Status != "done" {
-		return nil, fmt.Errorf("only a completed preview can be accepted")
+		return nil, ErrAccept
 	}
 	tx, err := s.DB.Begin()
 	if err != nil {

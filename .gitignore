@@ -2,6 +2,6 @@ chatvolution.db*
 chatvolution.json
 prompts/
 /chatvolution.exe
-web-spec.md
+stubllm.exe
+smoke/
 .env
-*.log

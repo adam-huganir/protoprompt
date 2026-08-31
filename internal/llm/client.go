@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -62,6 +63,74 @@ func (c *Client) Endpoint() string {
 		return base
 	}
 	return base + "/chat/completions"
+}
+
+// modelsEndpoint is the upstream GET /models URL: the same base as Endpoint(),
+// with a trailing /chat/completions stripped and /models appended.
+func (c *Client) modelsEndpoint() string {
+	base := strings.TrimRight(c.BaseURL, "/")
+	if trimmed := strings.TrimSuffix(base, "/chat/completions"); trimmed != base {
+		base = trimmed
+	}
+	return base + "/models"
+}
+
+// Models returns upstream model ids from GET {base}/models, deduped and
+// sorted case-insensitively. An empty result is not an error.
+func (c *Client) Models(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second) // never inherit the 300s chat timeout
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.modelsEndpoint(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "chatvolution")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := extractErrMessage(body)
+		if msg == "" {
+			msg = strings.TrimSpace(string(body))
+		}
+		if msg == "" {
+			msg = resp.Status
+		}
+		return nil, fmt.Errorf("upstream %s: %s", resp.Status, msg)
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("upstream models: malformed JSON: %w", err)
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, m := range payload.Data {
+		id := strings.TrimSpace(m.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := strings.ToLower(out[i]), strings.ToLower(out[j])
+		if a != b {
+			return a < b
+		}
+		return out[i] < out[j]
+	})
+	return out, nil
 }
 
 func buildBody(p Params) []byte {

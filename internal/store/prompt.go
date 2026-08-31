@@ -113,7 +113,7 @@ func (s *Store) ListFiles() ([]FileEntry, error) {
 		if strings.HasPrefix(name, ".") {
 			return nil
 		}
-		e := FileEntry{Name: rel, Path: p}
+		e := FileEntry{Name: name, Path: rel}
 		if st, ok := stats[rel]; ok {
 			e.RevCount = st.count
 			e.LatestSavedAt = st.latest
@@ -154,7 +154,7 @@ func (s *Store) CreateFile(name string) (*FileEntry, error) {
 		return nil, err
 	}
 	f.Close()
-	return &FileEntry{Name: clean, Path: full}, nil
+	return &FileEntry{Name: path.Base(clean), Path: clean}, nil
 }
 
 // ReadFile returns current disk content of a workspace file.

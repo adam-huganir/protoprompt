@@ -193,6 +193,18 @@ func handleCompletions(w http.ResponseWriter, r *http.Request) {
 	flush(w)
 }
 
+// handleModels answers the OpenAI-compatible model list. "stub" matches the
+// smoke config; the -alt ids exist only upstream, so they prove a client
+// really read this endpoint rather than its own config.
+func handleModels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, `{"object":"list","data":[`+
+		`{"id":"stub","object":"model","created":1700000000,"owned_by":"stub"},`+
+		`{"id":"stub-alt","object":"model","created":1700000000,"owned_by":"stub"},`+
+		`{"id":"stub-alt-2","object":"model","created":1700000000,"owned_by":"stub"}]}`)
+}
+
 func main() {
 	port := flag.Int("port", 9876, "port to listen on (bound to 127.0.0.1)")
 	flag.Parse()
@@ -200,6 +212,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", handleCompletions)
 	mux.HandleFunc("POST /chat/completions", handleCompletions)
+	mux.HandleFunc("GET /v1/models", handleModels)
+	mux.HandleFunc("GET /models", handleModels)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", *port)
 	log.Printf("stubllm listening on http://%s (POST /v1/chat/completions)", addr)

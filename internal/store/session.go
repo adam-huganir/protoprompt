@@ -127,6 +127,19 @@ func (s *Store) UpdateSession(id, title, model, effort string, temperature float
 	return s.GetSession(id)
 }
 
+// SetSessionModel points a session at a different model and bumps updated_at.
+// Only the model column is written; PUT /api/sessions/{id} remains full-replace.
+func (s *Store) SetSessionModel(id, model string) (*Session, error) {
+	res, err := s.DB.Exec(`UPDATE session SET model = ?, updated_at = ? WHERE id = ?`, model, nowMS(), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetSession(id)
+}
+
 func (s *Store) DeleteSession(id string) error {
 	res, err := s.DB.Exec(`DELETE FROM session WHERE id = ?`, id)
 	if err != nil {

@@ -1,0 +1,51 @@
+/* chatvolution — markdown source highlighting: token colors + textarea overlay.
+   Token classes may only use color / font-weight / font-style / text-decoration-line:
+   the editor overlays this exact markup under a transparent monospace textarea, so
+   any metric change (font-size, family, letter/word-spacing, indent, stretch) or
+   box change (transform, padding, margin) would desync the caret. */
+
+/* ---------- tokens ---------- */
+
+.md-h           { color: var(--accent); font-weight: 700; }
+.md-hash        { color: var(--fg-dim); }
+.md-fence       { color: var(--warn); }
+.md-code        { color: #b3924a; } /* muted amber */
+.md-inline-code { color: var(--warn); }
+.md-strong      { color: #c79bf2; font-weight: 700; }
+.md-em          { color: #a78bfa; font-style: italic; }
+.md-boldem      { color: #c79bf2; font-weight: 700; font-style: italic; }
+.md-strike      { color: var(--fg-dim); text-decoration-line: line-through; }
+.md-list        { color: var(--warn); font-weight: 700; }
+.md-check       { color: var(--ok); font-weight: 700; }
+.md-quote       { color: var(--fg-dim); font-style: italic; }
+.md-link-text   { color: #58c4dd; }
+.md-url         { color: #3f97ad; } /* slightly darker cyan */
+.md-punct       { color: var(--fg-dim); }
+.md-front       { color: #565d6b; }
+.md-front-key   { color: var(--fg-dim); }
+.md-hr          { color: var(--fg-dim); }
+.md-table-sep   { color: #565d6b; }
+
+/* ---------- overlay ---------- */
+
+.hl-backdrop {
+  position: absolute;
+  margin: 0;
+  overflow: hidden; /* still programmatically scrollable for scroll sync */
+  pointer-events: none;
+  z-index: 0;
+  background: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  border-color: transparent; /* JS copies the textarea's border widths + solid style; keep the ring invisible */
+}
+
+textarea.hl-on {
+  color: transparent;
+  caret-color: var(--fg);
+  background: transparent;
+}
+
+textarea.hl-on::placeholder {
+  color: var(--fg-dim);
+}

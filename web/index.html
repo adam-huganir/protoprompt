@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>chatvolution</title>
 <link rel="stylesheet" href="./app.css">
+<link rel="stylesheet" href="./hl.css">
 </head>
 <body>
   <header id="hdr">
@@ -71,6 +72,8 @@
       <div id="msg-list"></div>
       <div id="chat-empty" class="empty"></div>
       <div id="input-row">
+        <select id="model-select" aria-label="Model" title="Model used for new replies"></select>
+        <button type="button" id="btn-model-refresh" class="btn btn-quiet btn-sm" title="Reload model list from upstream">&#8635;</button>
         <textarea id="input" rows="1" placeholder="Message the model…"></textarea>
         <button type="button" id="btn-send" class="btn btn-accent">Send</button>
       </div>
@@ -78,7 +81,7 @@
     </section>
   </main>
 
-  <footer id="app-footer">chatvolution · plain text — no markdown rendering</footer>
+  <footer id="app-footer">chatvolution · markdown source highlighting</footer>
 
   <div id="toasts"></div>
 
