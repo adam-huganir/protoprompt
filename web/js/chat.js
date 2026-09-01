@@ -15,7 +15,7 @@ let modelIds = [];    // ids from the upstream model list
 let modelErr = '';    // last /api/models failure, shown as a banner
 let pendingModel = ''; // pick used before a session exists (and for new sessions)
 let inputHl = null; // highlight overlay handle for ui.input (attached in mountChat)
-let sourceMode = false; // view toggle: true = syntax-highlighted source, false = rendered markdown
+const sourceViews = new Set(); // message ids currently shown as syntax-highlighted source
 
 export function currentSessionId() { return state.currentSessionId; }
 
@@ -30,7 +30,6 @@ export function mountChat(root, d) {
     err: $('#input-err', root),
     modelSel: $('#model-select', root),
     btnModelRefresh: $('#btn-model-refresh', root),
-    btnView: $('#btn-view-toggle', root),
   };
 
   inputHl = attachOverlay(ui.input);
@@ -44,11 +43,6 @@ export function mountChat(root, d) {
 
   ui.modelSel.addEventListener('change', () => applyModel(ui.modelSel.value));
   ui.btnModelRefresh.addEventListener('click', () => loadModels());
-  ui.btnView.addEventListener('click', () => {
-    sourceMode = !sourceMode;
-    ui.btnView.classList.toggle('active', sourceMode);
-    swapBodies();
-  });
   loadModels();
 
   return { refreshBanners, refreshModels: renderModels, loadSession, selectSession, newSession, renameSession, deleteSession, isBusy: () => busy };
@@ -328,11 +322,11 @@ function showEmpty(title, sub) {
   ui.empty.appendChild(row);
 }
 
-// Message body node: rendered markdown when `html` is present and the view
-// toggle is off; otherwise the syntax-highlighted source fallback (also used
-// for in-flight streams that have no html yet).
-function msgBody(html, text) {
-  if (!sourceMode && html) {
+// Message body node: rendered markdown when `html` is present and the message
+// isn't toggled to source; otherwise the syntax-highlighted source fallback
+// (also used for in-flight streams that have no html yet).
+function msgBody(html, text, id) {
+  if (html && !(id && sourceViews.has(id))) {
     const d = document.createElement('div');
     d.className = 'msg-rendered';
     d.innerHTML = html;
@@ -344,21 +338,35 @@ function msgBody(html, text) {
   return pre;
 }
 
-// Rebuild every completed message's body per sourceMode. The in-flight stream
-// bubble has no data-id and is skipped: its highlighted pre is already the
-// source view, and done() honors the flag when html arrives.
-function swapBodies() {
-  const byId = new Map();
+// Small </> button at the top-right of a bubble; flips just that message
+// between rendered markdown and syntax-highlighted source.
+function viewToggleBtn(id) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'msg-view-toggle' + (sourceViews.has(id) ? ' active' : '');
+  b.title = 'Toggle rendered / source';
+  b.innerHTML = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  b.addEventListener('click', () => toggleMsgView(id, b));
+  return b;
+}
+
+function toggleMsgView(id, btn) {
+  const el = btn.closest('.msg');
+  if (!el) return;
+  const m = msgById(id);
+  if (!m) return;
+  if (sourceViews.has(id)) sourceViews.delete(id); else sourceViews.add(id);
+  const body = el.querySelector(':scope > .msg-rendered, :scope > pre.msg-text');
+  if (body) el.replaceChild(msgBody(m.html, m.text, id), body);
+  btn.classList.toggle('active', sourceViews.has(id));
+}
+
+function msgById(id) {
   for (const m of (state.session && state.session.messages) || []) {
-    byId.set(m.id, m);
-    if (m.previewMessage) byId.set(m.previewMessage.id, m.previewMessage);
+    if (m.id === id) return m;
+    if (m.previewMessage && m.previewMessage.id === id) return m.previewMessage;
   }
-  ui.list.querySelectorAll('.msg').forEach((el) => {
-    const m = byId.get(el.dataset.id);
-    if (!m) return;
-    const body = el.querySelector(':scope > .msg-rendered, :scope > pre.msg-text');
-    if (body) el.replaceChild(msgBody(m.html, m.text), body);
-  });
+  return null;
 }
 
 function renderMsg(m) {
@@ -385,6 +393,7 @@ function renderMsg(m) {
       meta.appendChild(b);
     }
   }
+  if (m.html) meta.appendChild(viewToggleBtn(m.id));
   el.appendChild(meta);
 
   if (m.role === 'assistant' && m.reasoningText) {
@@ -399,7 +408,7 @@ function renderMsg(m) {
     el.appendChild(det);
   }
 
-  el.appendChild(msgBody(m.html, m.text));
+  el.appendChild(msgBody(m.html, m.text, m.id));
 
   if (m.error) {
     const e = document.createElement('div');
@@ -571,6 +580,7 @@ function renderPreview(pv) {
   meta.appendChild(el_text('span', 'msg-role', 'preview'));
   const status = pv.status === 'streaming' ? 'streaming…' : pv.status;
   meta.appendChild(dot(' · ' + status));
+  if (pv.html) meta.appendChild(viewToggleBtn(pv.id));
   el.appendChild(meta);
 
   if (pv.reasoningText) {
@@ -584,7 +594,7 @@ function renderPreview(pv) {
     det.appendChild(pre);
     el.appendChild(det);
   }
-  el.appendChild(msgBody(pv.html, pv.text));
+  el.appendChild(msgBody(pv.html, pv.text, pv.id));
   if (pv.error) {
     const e = document.createElement('div');
     e.className = 'msg-error';
@@ -715,7 +725,7 @@ function startLiveBubble() {
       scrollToEnd();
     },
     done(html) {
-      if (!html || sourceMode) return; // source mode keeps the highlighted pre
+      if (!html) return;
       const d = document.createElement('div');
       d.className = 'msg-rendered';
       d.innerHTML = html;
