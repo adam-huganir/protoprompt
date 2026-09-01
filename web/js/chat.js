@@ -15,6 +15,7 @@ let modelIds = [];    // ids from the upstream model list
 let modelErr = '';    // last /api/models failure, shown as a banner
 let pendingModel = ''; // pick used before a session exists (and for new sessions)
 let inputHl = null; // highlight overlay handle for ui.input (attached in mountChat)
+let sourceMode = false; // view toggle: true = syntax-highlighted source, false = rendered markdown
 
 export function currentSessionId() { return state.currentSessionId; }
 
@@ -29,6 +30,7 @@ export function mountChat(root, d) {
     err: $('#input-err', root),
     modelSel: $('#model-select', root),
     btnModelRefresh: $('#btn-model-refresh', root),
+    btnView: $('#btn-view-toggle', root),
   };
 
   inputHl = attachOverlay(ui.input);
@@ -42,6 +44,11 @@ export function mountChat(root, d) {
 
   ui.modelSel.addEventListener('change', () => applyModel(ui.modelSel.value));
   ui.btnModelRefresh.addEventListener('click', () => loadModels());
+  ui.btnView.addEventListener('click', () => {
+    sourceMode = !sourceMode;
+    ui.btnView.classList.toggle('active', sourceMode);
+    swapBodies();
+  });
   loadModels();
 
   return { refreshBanners, refreshModels: renderModels, loadSession, selectSession, newSession, renameSession, deleteSession, isBusy: () => busy };
@@ -321,10 +328,11 @@ function showEmpty(title, sub) {
   ui.empty.appendChild(row);
 }
 
-// Message body node: server-rendered markdown when `html` is present, else the
-// source-highlight fallback for in-flight streams that have no html yet.
+// Message body node: rendered markdown when `html` is present and the view
+// toggle is off; otherwise the syntax-highlighted source fallback (also used
+// for in-flight streams that have no html yet).
 function msgBody(html, text) {
-  if (html) {
+  if (!sourceMode && html) {
     const d = document.createElement('div');
     d.className = 'msg-rendered';
     d.innerHTML = html;
@@ -334,6 +342,23 @@ function msgBody(html, text) {
   pre.className = 'msg-text';
   applyHighlight(pre, text);
   return pre;
+}
+
+// Rebuild every completed message's body per sourceMode. The in-flight stream
+// bubble has no data-id and is skipped: its highlighted pre is already the
+// source view, and done() honors the flag when html arrives.
+function swapBodies() {
+  const byId = new Map();
+  for (const m of (state.session && state.session.messages) || []) {
+    byId.set(m.id, m);
+    if (m.previewMessage) byId.set(m.previewMessage.id, m.previewMessage);
+  }
+  ui.list.querySelectorAll('.msg').forEach((el) => {
+    const m = byId.get(el.dataset.id);
+    if (!m) return;
+    const body = el.querySelector(':scope > .msg-rendered, :scope > pre.msg-text');
+    if (body) el.replaceChild(msgBody(m.html, m.text), body);
+  });
 }
 
 function renderMsg(m) {
@@ -690,7 +715,7 @@ function startLiveBubble() {
       scrollToEnd();
     },
     done(html) {
-      if (!html) return;
+      if (!html || sourceMode) return; // source mode keeps the highlighted pre
       const d = document.createElement('div');
       d.className = 'msg-rendered';
       d.innerHTML = html;

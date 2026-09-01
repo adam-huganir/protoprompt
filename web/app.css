@@ -64,7 +64,7 @@ body {
 .spacer { flex: 1; }
 
 .seg { display: flex; border: 1px solid var(--border-2); border-radius: 6px; overflow: hidden; }
-.seg button {
+.seg button, .view-toggle {
   all: unset;
   cursor: pointer;
   padding: 4px 12px;
@@ -72,11 +72,13 @@ body {
   color: var(--fg-dim);
   background: transparent;
 }
-.seg button.active { background: var(--bg-2); color: var(--fg); }
-.seg button:hover { color: var(--fg); }
+.seg button.active, .view-toggle.active { background: var(--bg-2); color: var(--fg); }
+.seg button:hover, .view-toggle:hover { color: var(--fg); }
 
-.chat-tabs { border-radius: 0; border-left: none; border-right: none; }
+.chat-top { display: flex; border-top: 1px solid var(--border-2); border-bottom: 1px solid var(--border-2); }
+.chat-tabs { border: none; flex: 1; }
 .chat-tabs button { flex: 1; text-align: center; }
+.view-toggle { border-left: 1px solid var(--border-2); }
 
 .prop-panel { margin: 8px 0; border: 1px solid var(--border-2); border-radius: 6px; padding: 8px; }
 .prop-diff { max-height: 320px; overflow-y: auto; }
