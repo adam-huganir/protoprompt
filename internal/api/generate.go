@@ -177,30 +177,100 @@ func (s *Server) streamAssistant(ctx context.Context, str *sseStream, sess *stor
 	}
 
 	model, effort := s.sessionModel(sess)
-	p := llm.Params{
-		Model:       model,
-		System:      system,
-		History:     items,
-		Effort:      effort,
-		Temperature: sess.Temperature,
-		MaxTokens:   sess.MaxTokens,
-		ExtraBody:   sess.ExtraBody,
+
+	// List configured MCP tools once; a misconfigured server fails the whole
+	// generation loudly rather than silently disabling tools.
+	var toolSpecs []llm.ToolSpec
+	tools, err := s.mcpMgr.Tools(ctx)
+	if err != nil {
+		s.finalizeRow(row, llm.Result{}, "error", err.Error())
+		str.event("error", map[string]string{"message": err.Error()})
+		return err
+	}
+	for _, t := range tools {
+		toolSpecs = append(toolSpecs, llm.ToolSpec{Name: t.Name, Description: t.Description, Parameters: t.InputSchema})
 	}
 
-	result, streamErr := s.llm.Stream(ctx, p, func(kind, text string) {
+	relayDelta := func(kind, text string) {
 		str.event("delta", map[string]any{"kind": kind, "text": text})
-	})
-
-	switch {
-	case errors.Is(streamErr, llm.ErrCanceled):
-		s.finalizeRow(row, result, "canceled", "stream canceled")
-		return streamErr
-	case streamErr != nil:
-		s.finalizeRow(row, result, "error", streamErr.Error())
-		str.event("error", map[string]string{"message": streamErr.Error()})
-		return streamErr
 	}
-	fresh := s.finalizeRow(row, result, "done", "")
+
+	// Accumulate text/reasoning/tokens across tool rounds; finalize once.
+	acc := llm.Result{}
+	var rounds []llm.ToolRound
+	finished := false
+	for attempt := 0; attempt < 10 && !finished; attempt++ {
+		p := llm.Params{
+			Model:       model,
+			System:      system,
+			History:     items,
+			Effort:      effort,
+			Temperature: sess.Temperature,
+			MaxTokens:   sess.MaxTokens,
+			ExtraBody:   sess.ExtraBody,
+			Tools:       toolSpecs,
+			ToolRounds:  rounds,
+		}
+		res, streamErr := s.llm.Stream(ctx, p, relayDelta)
+
+		acc.Text += res.Text
+		acc.Reasoning += res.Reasoning
+		if res.PromptTokens != nil {
+			if acc.PromptTokens == nil {
+				pt := *res.PromptTokens
+				acc.PromptTokens = &pt
+			} else {
+				*acc.PromptTokens += *res.PromptTokens
+			}
+		}
+		if res.OutputTokens != nil {
+			if acc.OutputTokens == nil {
+				ot := *res.OutputTokens
+				acc.OutputTokens = &ot
+			} else {
+				*acc.OutputTokens += *res.OutputTokens
+			}
+		}
+
+		switch {
+		case errors.Is(streamErr, llm.ErrCanceled):
+			s.finalizeRow(row, acc, "canceled", "stream canceled")
+			return streamErr
+		case streamErr != nil:
+			s.finalizeRow(row, acc, "error", streamErr.Error())
+			str.event("error", map[string]string{"message": streamErr.Error()})
+			return streamErr
+		}
+
+		if len(res.ToolCalls) == 0 {
+			finished = true
+			break
+		}
+
+		results := []llm.ToolResult{}
+		for _, call := range res.ToolCalls {
+			args := map[string]any{}
+			if call.Function.Arguments != "" {
+				_ = json.Unmarshal([]byte(call.Function.Arguments), &args)
+			}
+			cr, err := s.mcpMgr.CallTool(ctx, call.Function.Name, args)
+			if err != nil {
+				s.finalizeRow(row, acc, "error", err.Error())
+				str.event("error", map[string]string{"message": err.Error()})
+				return err
+			}
+			results = append(results, llm.ToolResult{ToolCallID: call.ID, Content: cr.Content})
+		}
+		rounds = append(rounds, llm.ToolRound{AssistantContent: res.Text, ToolCalls: res.ToolCalls, Results: results})
+	}
+	if !finished {
+		msg := "tool loop exceeded 10 rounds"
+		s.finalizeRow(row, acc, "error", msg)
+		str.event("error", map[string]string{"message": msg})
+		return fmt.Errorf("%s", msg)
+	}
+
+	fresh := s.finalizeRow(row, acc, "done", "")
 	if !preview {
 		if err := s.store.SetHeadDirect(sess.ID, row.ID); err != nil {
 			str.event("error", map[string]string{"message": err.Error()})

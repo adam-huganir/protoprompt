@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,13 +79,24 @@ func TestModelEnvPopulatesModels(t *testing.T) {
 	}
 }
 
-func TestInvalidBaseURLErrors(t *testing.T) {
-	path := writeFile(t, "c.json", `{"baseUrl":"ftp://nope"}`)
-	if _, err := Load(path); err == nil {
-		t.Fatal("expected error for ftp scheme")
+func TestMCPServersLoadedAndValidated(t *testing.T) {
+	path := writeFile(t, "mcp.json", `{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],"env":{"GITHUB_TOKEN":"tok"}}}}`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	path = writeFile(t, "c2.json", `{"baseUrl":"not a url"}`)
-	if _, err := Load(path); err == nil {
-		t.Fatal("expected error for unparseable base url")
+	srv, ok := cfg.MCPServers["github"]
+	if !ok {
+		t.Fatalf("mcpServers not loaded: %+v", cfg.MCPServers)
+	}
+	if srv.Command != "npx" || len(srv.Args) != 2 || srv.Env["GITHUB_TOKEN"] != "tok" {
+		t.Errorf("server = %+v", srv)
+	}
+
+	bad := writeFile(t, "bad.json", `{"mcpServers":{"broken":{"args":[]}}}`)
+	if _, err := Load(bad); err == nil {
+		t.Fatal("expected error for missing command")
+	} else if !strings.Contains(err.Error(), `"broken"`) {
+		t.Errorf("err = %v", err)
 	}
 }

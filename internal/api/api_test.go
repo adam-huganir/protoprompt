@@ -63,6 +63,11 @@ func newLiveServer(t *testing.T) *liveServer {
 
 func newLiveServerUpstream(t *testing.T, up *httptest.Server) *liveServer {
 	t.Helper()
+	return newLiveServerWithMCPServers(t, up, nil)
+}
+
+func newLiveServerWithMCPServers(t *testing.T, up *httptest.Server, servers map[string]config.MCPServer) *liveServer {
+	t.Helper()
 	t.Cleanup(up.Close)
 	h, err := db.Open(filepath.Join(t.TempDir(), "live.db"))
 	if err != nil {
@@ -75,6 +80,7 @@ func newLiveServerUpstream(t *testing.T, up *httptest.Server) *liveServer {
 		Models:       []string{"stub"},
 		DefaultModel: "stub",
 		ExtraBody:    map[string]any{},
+		MCPServers:   servers,
 		Dir:          t.TempDir(),
 		Port:         8420,
 		Host:         "127.0.0.1",
@@ -984,5 +990,119 @@ func TestSwitchModelAppliesToNextReply(t *testing.T) {
 	msg := done["message"].(map[string]any)
 	if msg["model"] != "stub-alt" {
 		t.Errorf("reply model = %v, want stub-alt", msg["model"])
+	}
+}
+// toolUpstream streams a single tool_call (name stub_echo, empty args) when
+// the last user message is "use_tool", and echoes otherwise; once a tool
+// message appears in the history it streams the model's post-tool answer.
+// It captures every request body for assertion.
+func toolUpstream(t *testing.T) (*httptest.Server, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var bodies []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"object":"list","data":[{"id":"stub"}]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.Unmarshal(body, &req)
+		hasTool, last := false, ""
+		for _, m := range req.Messages {
+			if m.Role == "tool" {
+				hasTool = true
+			}
+			if m.Role == "user" {
+				last = m.Content
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		send := func(s string) { fmt.Fprint(w, s); f.Flush() }
+		switch {
+		case hasTool:
+			send("data: {\"choices\":[{\"delta\":{\"content\":\"done after tool\"}}]}\n\n")
+		case strings.TrimSpace(last) == "use_tool":
+			send("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_stub\",\"type\":\"function\",\"function\":{\"name\":\"stub_echo\",\"arguments\":\"{}\"}}]}}]}\n\n")
+		default:
+			send("data: {\"choices\":[{\"delta\":{\"content\":\"Echo: " + last + "\"}}]}\n\n")
+		}
+		send("data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n")
+		send("data: [DONE]\n\n")
+	}))
+	return up, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), bodies...)
+	}
+}
+
+func TestGenerateToolCallFlow(t *testing.T) {
+	up, bodies := toolUpstream(t)
+	ls := newLiveServerWithMCPServers(t, up, map[string]config.MCPServer{
+		"stub": {Command: "go", Args: []string{"run", "protoprompt/cmd/stubmcp"}},
+	})
+	seedFile(t, ls, "p.md", "be nice")
+	sess := createSession(t, ls, "p.md")
+	sid := sess["id"].(string)
+	addUserMessage(t, ls, sid, nil, "use_tool")
+
+	events := ls.streamSSETest("/api/sessions/"+sid+"/generate", map[string]any{})
+	var done map[string]any
+	for _, ev := range events {
+		if ev.Event == "error" {
+			t.Fatalf("stream error: %v", ev.Data)
+		}
+		if ev.Event == "done" {
+			done = ev.Data
+		}
+	}
+	if done == nil {
+		t.Fatalf("no done event; events: %+v", events)
+	}
+	msg := done["message"].(map[string]any)
+	if msg["text"] != "done after tool" {
+		t.Errorf("text = %v, want post-tool answer", msg["text"])
+	}
+
+	// The tool round fed the result back: the second upstream request carried
+	// a role:"tool" message.
+	all := bodies()
+	if len(all) < 2 {
+		t.Fatalf("upstream requests = %d, want >= 2", len(all))
+	}
+	if !strings.Contains(all[1], `"role":"tool"`) || !strings.Contains(all[1], `"tool_call_id":"call_stub"`) {
+		t.Errorf("second request missing tool round:\n%s", all[1])
+	}
+
+	// A second generate without use_tool still echoes (no tool round).
+	head, _ := done["messageId"].(string)
+	addUserMessage(t, ls, sid, &head, "plain")
+	events2 := ls.streamSSETest("/api/sessions/"+sid+"/generate", map[string]any{})
+	var done2 map[string]any
+	for _, ev := range events2 {
+		if ev.Event == "error" {
+			t.Fatalf("stream error: %v", ev.Data)
+		}
+		if ev.Event == "done" {
+			done2 = ev.Data
+		}
+	}
+	if done2 == nil {
+		t.Fatalf("no second done; events: %+v", events2)
+	}
+	msg2 := done2["message"].(map[string]any)
+	if msg2["text"] != "Echo: plain" {
+		t.Errorf("second text = %v, want echo", msg2["text"])
 	}
 }

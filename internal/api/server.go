@@ -11,15 +11,17 @@ import (
 
 	"protoprompt/internal/config"
 	"protoprompt/internal/llm"
+	"protoprompt/internal/mcp"
 	"protoprompt/internal/store"
 )
 
 type Server struct {
-	cfg   config.Config
-	db    *sql.DB
-	store *store.Store
-	web   fs.FS
-	llm   *llm.Client
+	cfg    config.Config
+	db     *sql.DB
+	store  *store.Store
+	web    fs.FS
+	llm    *llm.Client
+	mcpMgr *mcp.Manager
 }
 
 func New(cfg config.Config, db *sql.DB, st *store.Store, web fs.FS) *Server {
@@ -28,12 +30,26 @@ func New(cfg config.Config, db *sql.DB, st *store.Store, web fs.FS) *Server {
 		timeout = 300 * time.Second
 	}
 	return &Server{
-		cfg:   cfg,
-		db:    db,
-		store: st,
-		web:   web,
-		llm:   llm.New(cfg.BaseURL, cfg.APIKey, timeout),
+		cfg:    cfg,
+		db:     db,
+		store:  st,
+		web:    web,
+		llm:    llm.New(cfg.BaseURL, cfg.APIKey, timeout),
+		mcpMgr: mcp.NewManager(convertServers(cfg.MCPServers)),
 	}
+}
+
+// convertServers maps configured MCPServers onto mcp.Server specs for the
+// tool manager.
+func convertServers(servers map[string]config.MCPServer) map[string]mcp.Server {
+	if servers == nil {
+		return nil
+	}
+	out := make(map[string]mcp.Server, len(servers))
+	for name, s := range servers {
+		out[name] = mcp.Server{Command: s.Command, Args: s.Args, Env: s.Env}
+	}
+	return out
 }
 
 func (s *Server) Handler() http.Handler {

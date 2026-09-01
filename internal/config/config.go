@@ -10,28 +10,38 @@ import (
 )
 
 type Config struct {
-	BaseURL      string         `json:"baseUrl"`
-	APIKey       string         `json:"apiKey"`
-	Models       []string       `json:"models"`
-	DefaultModel string         `json:"defaultModel"`
-	ReasoningEff string         `json:"reasoningEffort"`
-	ExtraBody    map[string]any `json:"extraBody"`
-	Timeout      time.Duration  `json:"-"`
-	Port         int            `json:"port"`
-	Host         string         `json:"host"`
-	Dir          string         `json:"-"` // prompt workspace dir (from --dir)
+	BaseURL      string                  `json:"baseUrl"`
+	APIKey       string                  `json:"apiKey"`
+	Models       []string                `json:"models"`
+	DefaultModel string                  `json:"defaultModel"`
+	ReasoningEff string                  `json:"reasoningEffort"`
+	ExtraBody    map[string]any          `json:"extraBody"`
+	MCPServers   map[string]MCPServer    `json:"mcpServers"`
+	Timeout      time.Duration           `json:"-"`
+	Port         int                     `json:"port"`
+	Host         string                  `json:"host"`
+	Dir          string                  `json:"-"` // prompt workspace dir (from --dir)
+}
+
+// MCPServer describes one stdio-transport MCP server (Claude Code / Cursor /
+// VS Code convention): a command plus args and environment.
+type MCPServer struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 type fileConfig struct {
-	BaseURL               *string        `json:"baseUrl"`
-	APIKey                *string        `json:"apiKey"`
-	Models                []string       `json:"models"`
-	DefaultModel          *string        `json:"defaultModel"`
-	ReasoningEff          *string        `json:"reasoningEffort"`
-	ExtraBody             map[string]any `json:"extraBody"`
-	RequestTimeoutSeconds *int           `json:"requestTimeoutSeconds"`
-	Port                  *int           `json:"port"`
-	Host                  *string        `json:"host"`
+	BaseURL               *string               `json:"baseUrl"`
+	APIKey                *string               `json:"apiKey"`
+	Models                []string              `json:"models"`
+	DefaultModel          *string               `json:"defaultModel"`
+	ReasoningEff          *string               `json:"reasoningEffort"`
+	ExtraBody             map[string]any       `json:"extraBody"`
+	MCPServers            *map[string]MCPServer `json:"mcpServers"`
+	RequestTimeoutSeconds *int                  `json:"requestTimeoutSeconds"`
+	Port                  *int                  `json:"port"`
+	Host                  *string               `json:"host"`
 }
 
 // Load reads config from path (default "protoprompt.json" when empty). A
@@ -68,6 +78,9 @@ func Load(path string) (*Config, error) {
 		}
 		if fc.ExtraBody != nil {
 			cfg.ExtraBody = fc.ExtraBody
+		}
+		if fc.MCPServers != nil {
+			cfg.MCPServers = *fc.MCPServers
 		}
 		if fc.RequestTimeoutSeconds != nil && *fc.RequestTimeoutSeconds > 0 {
 			cfg.Timeout = time.Duration(*fc.RequestTimeoutSeconds) * time.Second
@@ -113,6 +126,11 @@ func envFallback(primary, fallback string) string {
 }
 
 func (c *Config) validate() error {
+	for name, srv := range c.MCPServers {
+		if srv.Command == "" {
+			return fmt.Errorf("mcp server %q: command required", name)
+		}
+	}
 	if c.BaseURL == "" {
 		return nil // not configured; generate reports it
 	}

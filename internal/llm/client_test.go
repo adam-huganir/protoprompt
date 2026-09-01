@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -228,5 +229,59 @@ func TestModelsNon2xx(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "upstream 401") || !strings.Contains(err.Error(), "bad key") {
 		t.Errorf("err = %v", err)
+	}
+}
+// TestStreamToolCalls: a streamed tool_call delta (arguments split across two
+// fragments) is accumulated into Result.ToolCalls; onDelta sees only the final
+// content delta; and the captured request body carries tools + a tool message
+// when ToolRounds is set.
+func TestStreamToolCalls(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, sseBody(
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"stub_echo","arguments":"{\"tex"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"t\":\"hi\"}"}}]}}]}`,
+			`{"choices":[{"delta":{"content":"done after tool"}}]}`,
+		))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", 5*time.Second)
+	p := Params{
+		Model: "m",
+		Tools: []ToolSpec{{Name: "stub_echo", Description: "d", Parameters: map[string]any{"type": "object"}}},
+		ToolRounds: []ToolRound{{
+			AssistantContent: "",
+			ToolCalls: []ToolCall{{ID: "call_1", Type: "function", Function: ToolCallFunction{Name: "stub_echo", Arguments: `{"text":"hi"}`}}},
+			Results:         []ToolResult{{ToolCallID: "call_1", Content: "echo: hi"}},
+		}},
+	}
+	var got []string
+	res, err := c.Stream(context.Background(), p, func(kind, text string) { got = append(got, kind+":"+text) })
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if res.Text != "done after tool" {
+		t.Errorf("Text = %q", res.Text)
+	}
+	if len(res.ToolCalls) != 1 {
+		t.Fatalf("ToolCalls = %+v", res.ToolCalls)
+	}
+	tc := res.ToolCalls[0]
+	if tc.ID != "call_1" || tc.Type != "function" || tc.Function.Name != "stub_echo" || tc.Function.Arguments != `{"text":"hi"}` {
+		t.Errorf("ToolCall = %+v", tc)
+	}
+	// onDelta saw only the content delta, never tool_calls fragments.
+	if len(got) != 1 || got[0] != "content:done after tool" {
+		t.Errorf("deltas = %v", got)
+	}
+	// Request body carries tools, tool_choice auto, and the tool round message.
+	for _, want := range []string{`"tools"`, `"tool_choice":"auto"`, `"role":"tool"`, `"tool_call_id":"call_1"`} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("body missing %q:\n%s", want, gotBody)
+		}
 	}
 }

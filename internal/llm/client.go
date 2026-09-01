@@ -24,6 +24,38 @@ type Item struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
+// ToolSpec describes one tool the model may call (OpenAI function shape).
+type ToolSpec struct {
+	Name        string
+	Description string
+	Parameters  map[string]any
+}
+
+// ToolCall is one tool invocation emitted by a streaming model round.
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ToolResult feeds one tool's outcome back to the model.
+type ToolResult struct {
+	ToolCallID string
+	Content    string
+}
+
+// ToolRound is one model↔tool exchange: assistant text + tool calls, then
+// each tool's result.
+type ToolRound struct {
+	AssistantContent string
+	ToolCalls        []ToolCall
+	Results          []ToolResult
+}
 
 // Params describes one upstream call.
 type Params struct {
@@ -34,6 +66,8 @@ type Params struct {
 	Temperature float64
 	MaxTokens   *int
 	ExtraBody   map[string]any
+	Tools       []ToolSpec
+	ToolRounds  []ToolRound
 }
 
 // Result holds the accumulated stream output.
@@ -42,6 +76,7 @@ type Result struct {
 	Reasoning    string
 	PromptTokens *int
 	OutputTokens *int
+	ToolCalls    []ToolCall
 }
 
 type Client struct {
@@ -138,13 +173,33 @@ func buildBody(p Params) []byte {
 	for k, v := range p.ExtraBody {
 		body[k] = v
 	}
-	messages := make([]Item, 0, len(p.History)+1)
+	msgs := make([]any, 0, len(p.History)+1)
 	if p.System != "" {
-		messages = append(messages, Item{Role: "system", Content: p.System})
+		msgs = append(msgs, Item{Role: "system", Content: p.System})
 	}
-	messages = append(messages, p.History...)
+	for _, h := range p.History {
+		msgs = append(msgs, h)
+	}
+	for _, round := range p.ToolRounds {
+		asst := map[string]any{"role": "assistant", "content": round.AssistantContent}
+		if len(round.ToolCalls) > 0 {
+			tcs := make([]any, 0, len(round.ToolCalls))
+			for _, tc := range round.ToolCalls {
+				tcs = append(tcs, map[string]any{
+					"id":       tc.ID,
+					"type":     tc.Type,
+					"function": map[string]any{"name": tc.Function.Name, "arguments": tc.Function.Arguments},
+				})
+			}
+			asst["tool_calls"] = tcs
+		}
+		msgs = append(msgs, asst)
+		for _, r := range round.Results {
+			msgs = append(msgs, map[string]any{"role": "tool", "tool_call_id": r.ToolCallID, "content": r.Content})
+		}
+	}
 	body["model"] = p.Model
-	body["messages"] = messages
+	body["messages"] = msgs
 	body["temperature"] = p.Temperature
 	body["stream"] = true
 	body["stream_options"] = map[string]any{"include_usage": true}
@@ -154,6 +209,21 @@ func buildBody(p Params) []byte {
 	if p.Effort != "" {
 		body["reasoning_effort"] = p.Effort
 	}
+	if len(p.Tools) > 0 {
+		tools := make([]any, 0, len(p.Tools))
+		for _, t := range p.Tools {
+			tools = append(tools, map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        t.Name,
+					"description": t.Description,
+					"parameters":  t.Parameters,
+				},
+			})
+		}
+		body["tools"] = tools
+		body["tool_choice"] = "auto"
+	}
 	data, _ := json.Marshal(body)
 	return data
 }
@@ -162,6 +232,15 @@ type chunkDelta struct {
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content"`
 	Reasoning        string `json:"reasoning"`
+	ToolCalls        []struct {
+		Index    *int   `json:"index"`
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Function struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		} `json:"function"`
+	} `json:"tool_calls"`
 }
 
 type chunkUsage struct {
@@ -259,6 +338,23 @@ func (c *Client) Stream(ctx context.Context, p Params, onDelta func(kind, text s
 			if rc != "" {
 				reason.WriteString(rc)
 				onDelta("reasoning", rc)
+			}
+			for _, frag := range choice.Delta.ToolCalls {
+				idx := 0
+				if frag.Index != nil {
+					idx = *frag.Index
+				}
+				for len(res.ToolCalls) <= idx {
+					res.ToolCalls = append(res.ToolCalls, ToolCall{Type: "function"})
+				}
+				tc := &res.ToolCalls[idx]
+				if tc.ID == "" && frag.ID != "" {
+					tc.ID = frag.ID
+				}
+				if tc.Function.Name == "" && frag.Function.Name != "" {
+					tc.Function.Name = frag.Function.Name
+				}
+				tc.Function.Arguments += frag.Function.Arguments
 			}
 		}
 	}
