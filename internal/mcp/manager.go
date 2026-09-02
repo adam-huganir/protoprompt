@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -63,7 +64,16 @@ func (m *Manager) Tools(ctx context.Context) ([]Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
-	for name, srv := range m.servers {
+	// Iterate servers in a stable order so the tool list (and thus the
+	// llm-facing key ordering) is deterministic across runs.
+	names := make([]string, 0, len(m.servers))
+	for name := range m.servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		srv := m.servers[name]
 		cl, err := m.newClient(srv.Command, srv.Args, envPairs(srv.Env))
 		if err != nil {
 			m.initErr = fmt.Errorf("mcp server %q: %w", name, err)
