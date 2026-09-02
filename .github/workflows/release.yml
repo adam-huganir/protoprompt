@@ -1,0 +1,83 @@
+name: release
+
+# Auto-publishes a GitHub Release when the version is bumped on main.
+# Bump the repo-root VERSION file in a PR; merging it triggers this workflow,
+# which tags v<VERSION> and attaches cross-compiled x64 binaries. Merges that
+# don't touch VERSION do not create a release.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Read version
+        id: v
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.v.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.v.outputs.tag }} already exists; skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.check.outputs.exists == 'false'
+        run: go test ./...
+
+      - name: Build binaries
+        if: steps.check.outputs.exists == 'false'
+        env:
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          commit="$(git rev-parse --short HEAD)"
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w"
+          ldflags="$ldflags -X protoprompt/internal/version.Version=${VERSION}"
+          ldflags="$ldflags -X protoprompt/internal/version.Commit=${commit}"
+          ldflags="$ldflags -X protoprompt/internal/version.Date=${date}"
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/protoprompt-linux-amd64 .
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/protoprompt-darwin-amd64 .
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/protoprompt-windows-amd64.exe .
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --title "${{ steps.v.outputs.tag }}" \
+            --target "${{ github.sha }}" \
+            --generate-notes \
+            dist/*

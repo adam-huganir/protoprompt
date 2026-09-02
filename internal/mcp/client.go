@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"protoprompt/internal/version"
 )
 
 const (
@@ -91,7 +93,7 @@ func (c *Client) Start(ctx context.Context) error {
 	if _, err := c.request(ctx, "initialize", map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "protoprompt", "version": "0.1"},
+		"clientInfo":      map[string]any{"name": "protoprompt", "version": version.Version},
 	}); err != nil {
 		return err
 	}

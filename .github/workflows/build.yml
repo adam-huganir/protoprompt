@@ -86,7 +86,16 @@ jobs:
         run: go test ./...
 
       - name: Build
-        run: go build -trimpath -o "protoprompt-${{ matrix.name }}${{ matrix.ext }}" .
+        shell: bash
+        run: |
+          version="$(cat VERSION)"
+          commit="$(git rev-parse --short HEAD)"
+          date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w"
+          ldflags="$ldflags -X protoprompt/internal/version.Version=${version}"
+          ldflags="$ldflags -X protoprompt/internal/version.Commit=${commit}"
+          ldflags="$ldflags -X protoprompt/internal/version.Date=${date}"
+          go build -trimpath -ldflags "$ldflags" -o "protoprompt-${{ matrix.name }}${{ matrix.ext }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

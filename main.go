@@ -12,6 +12,7 @@ import (
 	"protoprompt/internal/config"
 	"protoprompt/internal/db"
 	"protoprompt/internal/store"
+	"protoprompt/internal/version"
 )
 
 //go:embed all:web
@@ -23,7 +24,13 @@ func main() {
 	dbPath := flag.String("db", "protoprompt.db", "SQLite database file")
 	port := flag.Int("port", 0, "listen port (overrides config)")
 	host := flag.String("host", "", "listen host (overrides config)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("protoprompt", version.String())
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -50,6 +57,6 @@ func main() {
 	srv := api.New(*cfg, sqlDB, st, web)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Printf("protoprompt listening on http://%s", addr)
+	log.Printf("protoprompt %s listening on http://%s", version.String(), addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }
