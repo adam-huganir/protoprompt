@@ -162,7 +162,6 @@ func (s *Server) saveHelperProposal(rowID, file, baseText string) {
 	}
 }
 
-
 // streamAssistant runs one upstream call for a pre-inserted assistant row and
 // emits delta/done/error frames. Returns nil on success.
 func (s *Server) streamAssistant(ctx context.Context, str *sseStream, sess *store.Session, row *store.Message, system string, preview bool) error {

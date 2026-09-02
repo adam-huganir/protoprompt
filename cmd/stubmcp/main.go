@@ -67,7 +67,7 @@ func main() {
 			resp = map[string]any{
 				"jsonrpc": "2.0",
 				"id":      *req.ID,
-				"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "echo:" + params.Arguments.Text}}},
+				"result":  map[string]any{"content": []map[string]any{{"type": "text", "text": "echo:" + params.Arguments.Text}}},
 			}
 		default:
 			resp = map[string]any{

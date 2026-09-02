@@ -231,6 +231,7 @@ func TestModelsNon2xx(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
 // TestStreamToolCalls: a streamed tool_call delta (arguments split across two
 // fragments) is accumulated into Result.ToolCalls; onDelta sees only the final
 // content delta; and the captured request body carries tools + a tool message
@@ -255,8 +256,8 @@ func TestStreamToolCalls(t *testing.T) {
 		Tools: []ToolSpec{{Name: "stub_echo", Description: "d", Parameters: map[string]any{"type": "object"}}},
 		ToolRounds: []ToolRound{{
 			AssistantContent: "",
-			ToolCalls: []ToolCall{{ID: "call_1", Type: "function", Function: ToolCallFunction{Name: "stub_echo", Arguments: `{"text":"hi"}`}}},
-			Results:         []ToolResult{{ToolCallID: "call_1", Content: "echo: hi"}},
+			ToolCalls:        []ToolCall{{ID: "call_1", Type: "function", Function: ToolCallFunction{Name: "stub_echo", Arguments: `{"text":"hi"}`}}},
+			Results:          []ToolResult{{ToolCallID: "call_1", Content: "echo: hi"}},
 		}},
 	}
 	var got []string

@@ -24,6 +24,7 @@ type Item struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
+
 // ToolSpec describes one tool the model may call (OpenAI function shape).
 type ToolSpec struct {
 	Name        string

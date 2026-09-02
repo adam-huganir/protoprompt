@@ -10,17 +10,17 @@ import (
 )
 
 type Config struct {
-	BaseURL      string                  `json:"baseUrl"`
-	APIKey       string                  `json:"apiKey"`
-	Models       []string                `json:"models"`
-	DefaultModel string                  `json:"defaultModel"`
-	ReasoningEff string                  `json:"reasoningEffort"`
-	ExtraBody    map[string]any          `json:"extraBody"`
-	MCPServers   map[string]MCPServer    `json:"mcpServers"`
-	Timeout      time.Duration           `json:"-"`
-	Port         int                     `json:"port"`
-	Host         string                  `json:"host"`
-	Dir          string                  `json:"-"` // prompt workspace dir (from --dir)
+	BaseURL      string               `json:"baseUrl"`
+	APIKey       string               `json:"apiKey"`
+	Models       []string             `json:"models"`
+	DefaultModel string               `json:"defaultModel"`
+	ReasoningEff string               `json:"reasoningEffort"`
+	ExtraBody    map[string]any       `json:"extraBody"`
+	MCPServers   map[string]MCPServer `json:"mcpServers"`
+	Timeout      time.Duration        `json:"-"`
+	Port         int                  `json:"port"`
+	Host         string               `json:"host"`
+	Dir          string               `json:"-"` // prompt workspace dir (from --dir)
 }
 
 // MCPServer describes one stdio-transport MCP server (Claude Code / Cursor /
@@ -37,7 +37,7 @@ type fileConfig struct {
 	Models                []string              `json:"models"`
 	DefaultModel          *string               `json:"defaultModel"`
 	ReasoningEff          *string               `json:"reasoningEffort"`
-	ExtraBody             map[string]any       `json:"extraBody"`
+	ExtraBody             map[string]any        `json:"extraBody"`
 	MCPServers            *map[string]MCPServer `json:"mcpServers"`
 	RequestTimeoutSeconds *int                  `json:"requestTimeoutSeconds"`
 	Port                  *int                  `json:"port"`

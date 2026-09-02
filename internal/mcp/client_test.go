@@ -29,9 +29,9 @@ func (f *fakeRunner) Start() (io.WriteCloser, io.Reader, io.Reader, error) {
 		for sc.Scan() {
 			line := sc.Text()
 			var m struct {
-				ID      *int64          `json:"id"`
-				Method  string          `json:"method"`
-				Params  json.RawMessage `json:"params"`
+				ID     *int64          `json:"id"`
+				Method string          `json:"method"`
+				Params json.RawMessage `json:"params"`
 			}
 			_ = json.Unmarshal([]byte(line), &m)
 			f.mu.Lock()

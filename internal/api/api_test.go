@@ -992,6 +992,7 @@ func TestSwitchModelAppliesToNextReply(t *testing.T) {
 		t.Errorf("reply model = %v, want stub-alt", msg["model"])
 	}
 }
+
 // toolUpstream streams a single tool_call (name stub_echo, empty args) when
 // the last user message is "use_tool", and echoes otherwise; once a tool
 // message appears in the history it streams the model's post-tool answer.

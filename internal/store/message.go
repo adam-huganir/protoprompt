@@ -10,33 +10,33 @@ import (
 
 // Message is one node in the session's message tree.
 type Message struct {
-	ID             string       `json:"id"`
-	SessionID      string       `json:"-"`
-	ParentID       *string      `json:"parentId"`
-	Role           string       `json:"role"`
-	Text           string       `json:"text"`
+	ID        string  `json:"id"`
+	SessionID string  `json:"-"`
+	ParentID  *string `json:"parentId"`
+	Role      string  `json:"role"`
+	Text      string  `json:"text"`
 	// Html is the escaped markdown rendering of Text, computed in memory at
 	// serialization time (no DB column); empty for rows that have not been
 	// rendered yet.
-	Html           string       `json:"html,omitempty"`
-	ReasoningText  string       `json:"reasoningText"`
-	Status         string       `json:"status"`
-	Preview        bool         `json:"preview"`
-	PromptRevID    *string      `json:"promptRevId"`
-	Model          string       `json:"model"`
-	ReasoningEff   string       `json:"reasoningEffort"`
-	Temperature    float64      `json:"temperature"`
-	MaxTokens      *int         `json:"maxTokens"`
-	Error          string       `json:"error"`
-	PromptTokens   *int         `json:"promptTokens"`
-	OutputTokens   *int         `json:"outputTokens"`
-	LatencyMS      *int64       `json:"latencyMs"`
-	CreatedAt      int64        `json:"createdAt"`
-	FinishedAt     *int64       `json:"finishedAt"`
-	SiblingCount   int          `json:"siblingCount"`
-	SiblingIndex   int          `json:"siblingIndex"`
-	PreviewMessage *Message     `json:"previewMessage"`
-	Siblings       []SiblingRef `json:"siblings,omitempty"`
+	Html           string        `json:"html,omitempty"`
+	ReasoningText  string        `json:"reasoningText"`
+	Status         string        `json:"status"`
+	Preview        bool          `json:"preview"`
+	PromptRevID    *string       `json:"promptRevId"`
+	Model          string        `json:"model"`
+	ReasoningEff   string        `json:"reasoningEffort"`
+	Temperature    float64       `json:"temperature"`
+	MaxTokens      *int          `json:"maxTokens"`
+	Error          string        `json:"error"`
+	PromptTokens   *int          `json:"promptTokens"`
+	OutputTokens   *int          `json:"outputTokens"`
+	LatencyMS      *int64        `json:"latencyMs"`
+	CreatedAt      int64         `json:"createdAt"`
+	FinishedAt     *int64        `json:"finishedAt"`
+	SiblingCount   int           `json:"siblingCount"`
+	SiblingIndex   int           `json:"siblingIndex"`
+	PreviewMessage *Message      `json:"previewMessage"`
+	Siblings       []SiblingRef  `json:"siblings,omitempty"`
 	ProposedEdit   *ProposedEdit `json:"proposedEdit,omitempty"`
 }
 

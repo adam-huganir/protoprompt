@@ -33,12 +33,12 @@ type CallResult struct {
 // Runner's stdin/stdout. Requests are serialized with a mutex; notifications
 // (e.g. server→client requests, tools/list_changed) are ignored.
 type Client struct {
-	runner Runner
-	stdin  io.WriteCloser
+	runner  Runner
+	stdin   io.WriteCloser
 	scanner *bufio.Scanner
 
-	reqMu sync.Mutex          // serializes request round-trips
-	mu    sync.Mutex          // guards id + pends
+	reqMu sync.Mutex // serializes request round-trips
+	mu    sync.Mutex // guards id + pends
 	id    int64
 	pends map[int64]chan *rpcMessage
 
